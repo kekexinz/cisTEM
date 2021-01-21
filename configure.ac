@@ -34,15 +34,15 @@ WALLON=""
 AC_ARG_WITH([warnings-on], [Enable compiler warnings], [WALLON="-Wall"])
 
 
-if test "x$CXX" = "xicpc"; then		
+if test "x$CXX" = "xicpc"; then
 	CXXFLAGS="$CXXFLAGS -O3 -no-prec-div -no-prec-sqrt -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -std=c++11 -w2 -wd1125"
 	CPPFLAGS="$CPPFLAGS -O3 -no-prec-div -no-prec-sqrt -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE"
 else
-	CXXFLAGS="$CXXFLAGS -DNDEBUG -funroll-loops -O3 -pipe $WALLON -fexpensive-optimizations -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -std=c++11"		
+	CXXFLAGS="$CXXFLAGS -DNDEBUG -funroll-loops -O3 -pipe $WALLON -fexpensive-optimizations -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -std=c++11"
 	CPPFLAGS="$CPPFLAGS -DNDEBUG -funroll-loops -O3 -pipe $WALLON -fexpensive-optimizations -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE"
 
 	#sqlite needs dl on gcc
-	
+
 	LIBS="$LIBS -ldl"
 fi
 
@@ -78,7 +78,7 @@ AM_CONDITIONAL([OSX_AM], [test "$build_mac" = "yes"])
 # Use all available processor instruction sets
 AC_ARG_ENABLE(latest-instruction-set, [  --enable-latest-instruction-set     Use latest available CPU instruction set [[default=yes]]],[
   if test "$enableval" = yes; then
-	if test "x$CXX" = "xicpc"; then	
+	if test "x$CXX" = "xicpc"; then
 		CXXFLAGS="$CXXFLAGS -xHost"
 	fi
   fi
@@ -103,12 +103,12 @@ AC_ARG_ENABLE(staticmode, [  --enable-staticmode     Link statically [[default=n
   fi
   ])
 
-	
+
 AC_MSG_NOTICE(static_link = $static_link)
 AM_CONDITIONAL([STATIC_LINKING_AM],[test x$static_link = xtrue])
 
 
-# wx-config 
+# wx-config
 
 WXCONFIG=wx-config
 AC_ARG_WITH(wx-config,
@@ -133,7 +133,7 @@ AC_ARG_ENABLE(mkl, [  --disable-mkl           Do not use the Intel MKL ],[
 
 AC_ARG_ENABLE(debugmode, [  --enable-debugmode      Compile in debug mode [[default=no]]],[
   if test "$enableval" = yes; then
-  if test "x$CXX" = "xicpc"; then   
+  if test "x$CXX" = "xicpc"; then
     CXXFLAGS="-O2 -debug -no-prec-div -no-prec-sqrt -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DDEBUG -std=c++11 -w2 -wd1125"
     CPPFLAGS="-O2 -debug -no-prec-div -no-prec-sqrt -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -DDEBUG"
   else
@@ -142,7 +142,7 @@ AC_ARG_ENABLE(debugmode, [  --enable-debugmode      Compile in debug mode [[defa
   fi
   fi
   ])
-  
+
 want_cuda="no"
 ###############################
 # BEGIN CUDA CHECKS AND SETS
@@ -165,12 +165,15 @@ AC_ARG_WITH([cuda], AS_HELP_STRING([--with-cuda@<:@=yes|no|DIR@:>@], [prefix whe
 ], [ want_cuda="no"] )
 
 
-if test "$want_cuda" = "yes" 
+if test "$want_cuda" = "yes"
 then
+
+	# In Thrust 1.10 c++11 is deprecated. Not using those libs now, so squash warnings, but we should consider switching to a newer standard
+	AC_DEFINE(THRUST_IGNORE_DEPRECATED_CPP_11,true)
 
 	# Set conditional and run macro	
 	AX_CUDA
-	
+
     AC_MSG_NOTICE([Adding the CUDA includes Setting up NVCC initial flags])
     CUDA_CPPFLAGS="$CUDA_CFLAGS $NVCCFLAGS"
     CUDA_CXXFLAGS="$CUDA_CFLAGS $NVCCFLAGS"
@@ -182,14 +185,14 @@ fi
 
 ##############################
 # END CUDA CHECKS AND SETS
-##############################  
+##############################
 
 AM_CONDITIONAL([ENABLEGPU_AM], [test "$want_cuda" = "yes"])
 
 # fftw
 
 AC_ARG_WITH(fftw-dir,
-[[  --with-fftw-dir=DIR     Declare the root directory of fftw3, if its 
+[[  --with-fftw-dir=DIR     Declare the root directory of fftw3, if its
                           current location is not system accessible ]],
 [
     if test "$withval" != "yes" -a "$withval" != ""; then
@@ -208,16 +211,16 @@ AC_ARG_ENABLE(experimental, [  --enable-experimental  Compile with experimental 
   compile_experimental="true"
   fi
   ])
- 
-#rigorous socket check 
+
+#rigorous socket check
 
 AC_ARG_ENABLE(rigorous-sockets, [  --enable-rigorous-sockets  Use rigorous socket checking [[default=no]]],[
   if test "$enableval" = yes; then
   CPPFLAGS="$CPPFLAGS -DRIGOROUS_SOCKET_CHECK"
-  CXXFLAGS="$CXXFLAGS -DRIGOROUS_SOCKET_CHECK"  
+  CXXFLAGS="$CXXFLAGS -DRIGOROUS_SOCKET_CHECK"
   fi
   ])
- 
+
 AM_CONDITIONAL([EXPERIMENTAL_AM],[test x$compile_experimental = xtrue])
 
 # OpenMP
@@ -227,7 +230,7 @@ AC_ARG_ENABLE(openmp, [  --enable-openmp  Compile with OpenMP threading [[defaul
   CXXFLAGS="$CXXFLAGS $OPENMP_CXXFLAGS"
   fi
   ])
-  
+
 
 
 #sqlite3-dir
@@ -276,7 +279,7 @@ if test -n "$vers" && test "$vers" -ge 3000004; then
           WX_CXXFLAGS_BASE="`$WXCONFIG $WXCONFIGFLAGS --cxxflags base | sed -e 's/-fno-exceptions//'`"
           WX_LIBS_BASE="`$WXCONFIG $WXCONFIGFLAGS --libs base,net,xml`"
         fi
-                
+
         wx_is_available=1
 else
         AC_MSG_ERROR("Only wxWidgets version 3.0.4+ is currently supported.")
@@ -296,7 +299,7 @@ fi
 if test "x$HAVE_MKL" = "xyes"; then
 
 	AC_MSG_NOTICE(Using Intel MKL for fast Fourier transforms)
-	
+
 	CXXFLAGS="$CXXFLAGS -DMKL"
 	CPPFLAGS="$CPPFLAGS -DMKL"
 
@@ -343,7 +346,7 @@ fi
 #AC_ARG_ENABLE(textonly, [  --enable-textonly       Do not compile wxWidgets applications [[default=no]]],[
 #  if test "$enableval" = yes; then
 #  wx_is_available=0
-#  fi  
+#  fi
 #  ])
 
 
