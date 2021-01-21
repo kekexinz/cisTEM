@@ -30,6 +30,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	wxString    output_result_image_filename;
 	wxString    output_slab_filename;
 	wxString    xyz_coords_filename;
+	wxString    input_avg_filename;
+	wxString    input_std_filename;
 
 	float wanted_threshold;
 	float min_peak_radius;
@@ -69,11 +71,13 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	slab_thickness = my_input->GetFloatFromUser("Sample thickness (A)", "The thickness of the sample that was searched", "2000.0", 100.0);
 	pixel_size = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
 	binning_factor = my_input->GetFloatFromUser("Binning factor for slab", "Factor to reduce size of output slab", "4.0", 0.0);
+	input_avg_filename = my_input->GetFilenameFromUser("Input avg file","XXX","avg.mrc",true);
+	input_std_filename = my_input->GetFilenameFromUser("Input std file","XXX","std.mrc",true);
 
 	delete my_input;
 
 //	my_current_job.Reset(14);
-	my_current_job.ManualSetArguments("ttttttttttfffffbiii",	input_reconstruction_filename.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttttttttttfffffbiiitt",	input_reconstruction_filename.ToUTF8().data(),
 													input_mip_filename.ToUTF8().data(),
 													input_best_psi_filename.ToUTF8().data(),
 													input_best_theta_filename.ToUTF8().data(),
@@ -89,7 +93,9 @@ void MakeTemplateResult::DoInteractiveUserInput()
 													pixel_size, binning_factor,
 													read_coordinates,
 													mip_x_dimension, mip_y_dimension,
-													result_number);
+													result_number,
+													input_avg_filename.ToUTF8().data(),
+													input_std_filename.ToUTF8().data());
 }
 
 // override the do calculation method which will be what is actually run..
@@ -118,6 +124,8 @@ bool MakeTemplateResult::DoCalculation()
 	int 		mip_x_dimension = my_current_job.arguments[16].ReturnIntegerArgument();
 	int 		mip_y_dimension = my_current_job.arguments[17].ReturnIntegerArgument();
 	int 		result_number = my_current_job.arguments[18].ReturnIntegerArgument();
+	wxString    input_avg_filename = my_current_job.arguments[19].ReturnStringArgument();
+	wxString    input_std_filename = my_current_job.arguments[20].ReturnStringArgument();
 
 	float padding = 2.0f;
 
@@ -138,6 +146,8 @@ bool MakeTemplateResult::DoCalculation()
 	Image current_projection;
 	Image padded_projection;
 	Image slab;
+	Image avg_image;
+	Image std_image;
 
 	Peak current_peak;
 
@@ -148,6 +158,8 @@ bool MakeTemplateResult::DoCalculation()
 	float current_psi;
 	float current_defocus;
 	float current_pixel_size;
+	float current_avg;
+	float current_std;
 
 	int number_of_peaks_found = 0;
 	int slab_thickness_in_pixels;
@@ -159,13 +171,13 @@ bool MakeTemplateResult::DoCalculation()
 	long text_file_access_type;
 	int i,j;
 
-	float coordinates[8];
+	float coordinates[10];
 	if (read_coordinates) text_file_access_type = OPEN_TO_READ;
 	else text_file_access_type = OPEN_TO_WRITE;
-	NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 8);
+	NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 10);
 	if (! read_coordinates)
 	{
-		coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           Peak");
+		coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           Peak			Avg 		Std	");
 
 		mip_image.QuickAndDirtyReadSlice(input_mip_filename.ToStdString(), result_number);
 		psi_image.QuickAndDirtyReadSlice(input_best_psi_filename.ToStdString(), result_number);
@@ -173,6 +185,9 @@ bool MakeTemplateResult::DoCalculation()
 		phi_image.QuickAndDirtyReadSlice(input_best_phi_filename.ToStdString(), result_number);
 		defocus_image.QuickAndDirtyReadSlice(input_best_defocus_filename.ToStdString(), result_number);
 		pixel_size_image.QuickAndDirtyReadSlice(input_best_pixel_size_filename.ToStdString(), result_number);
+		avg_image.QuickAndDirtyReadSlice(input_avg_filename.ToStdString(), result_number);
+		std_image.QuickAndDirtyReadSlice(input_std_filename.ToStdString(), result_number);
+
 		mip_x_dimension = mip_image.logical_x_dimension;
 		mip_y_dimension = mip_image.logical_y_dimension;
 
@@ -265,6 +280,8 @@ bool MakeTemplateResult::DoCalculation()
 						current_psi = psi_image.real_values[address];
 						current_defocus = defocus_image.real_values[address];
 						current_pixel_size = pixel_size_image.real_values[address];
+						current_avg = avg_image.real_values[address];
+						current_std = std_image.real_values[address];
 					}
 
 					address++;
@@ -281,6 +298,9 @@ bool MakeTemplateResult::DoCalculation()
 			coordinates[5] = current_defocus;
 			coordinates[6] = current_pixel_size;
 			coordinates[7] = current_peak.value;
+			coordinates[8] = current_avg;
+			coordinates[9] = current_std;
+
 			coordinate_file.WriteLine(coordinates);
 		}
 		else
@@ -295,9 +315,11 @@ bool MakeTemplateResult::DoCalculation()
 			current_defocus = coordinates[5];
 			current_pixel_size = coordinates[6];
 			current_peak.value = coordinates[7];
+			current_avg = coordinates[8];
+			current_avg = coordinates[9];
 		}
 
-		wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
+		wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size, avg, std = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_avg, current_std, current_peak.value);
 
 			// ok get a projection
 

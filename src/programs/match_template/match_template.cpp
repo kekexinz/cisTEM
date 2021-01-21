@@ -1,6 +1,5 @@
 #include "../../core/core_headers.h"
 
-
 // Values for data that are passed around in the results.
 const int number_of_output_images = 8; //mip, scaledmip, psi, theta, phi, pixel, defocus, sums, sqsums
 const int number_of_meta_data_values = 6; // img_x, img_y, number cccs, histogram values.
@@ -367,7 +366,7 @@ bool MatchTemplateApp::DoCalculation()
 	wxString    best_defocus_output_file = my_current_job.arguments[25].ReturnStringArgument();
 	wxString    best_pixel_size_output_file = my_current_job.arguments[26].ReturnStringArgument();
 	wxString    scaled_mip_output_file = my_current_job.arguments[27].ReturnStringArgument();
-	wxString    correlation_avg_output_file = my_current_job.arguments[28].ReturnStringArgument();
+	wxString    correlation_std_output_file = my_current_job.arguments[28].ReturnStringArgument();
 	wxString 	my_symmetry = my_current_job.arguments[29].ReturnStringArgument();
 	float		in_plane_angular_step = my_current_job.arguments[30].ReturnFloatArgument();
 	wxString    output_histogram_file = my_current_job.arguments[31].ReturnStringArgument();
@@ -375,7 +374,7 @@ bool MatchTemplateApp::DoCalculation()
 	int 		last_search_position = my_current_job.arguments[33].ReturnIntegerArgument();
 	int 		image_number_for_gui = my_current_job.arguments[34].ReturnIntegerArgument();
 	int 		number_of_jobs_per_image_in_gui = my_current_job.arguments[35].ReturnIntegerArgument();
-	wxString    correlation_std_output_file = my_current_job.arguments[36].ReturnStringArgument();
+	wxString    correlation_avg_output_file = my_current_job.arguments[36].ReturnStringArgument();
 	wxString	directory_for_results = my_current_job.arguments[37].ReturnStringArgument();
 	wxString	result_output_filename = my_current_job.arguments[38].ReturnStringArgument();
 	float		min_peak_radius = my_current_job.arguments[39].ReturnFloatArgument();
@@ -430,6 +429,8 @@ bool MatchTemplateApp::DoCalculation()
 
 	float temp_float;
 	float variance;
+	float mean;
+	float sigma_s;
 	double temp_double;
 	double temp_double_array[5];
 	float factor_score;
@@ -459,6 +460,9 @@ bool MatchTemplateApp::DoCalculation()
 	int remove_npix_from_edge = 0;
 	double sqrt_input_pixels;
 
+	float P = 0;
+	int N;
+
 	EulerSearch	global_euler_search;
 	AnglesAndShifts angles;
 
@@ -466,7 +470,9 @@ bool MatchTemplateApp::DoCalculation()
 	ImageFile input_reconstruction_file;
 
 	Curve whitening_filter;
+	//Curve rotational_average;
 	Curve number_of_terms;
+	//Curve number_of_terms_2;
 
 	input_search_image_file.OpenFile(input_search_images_filename.ToStdString(), false);
 	input_reconstruction_file.OpenFile(input_reconstruction_filename.ToStdString(), false);
@@ -476,13 +482,24 @@ bool MatchTemplateApp::DoCalculation()
 //	wxPrintf("Removing %d pixels around the edge.\n", remove_npix_from_edge);
 
 	Image input_image;
+//	Image local_CC;
 	Image padded_reference;
+	//Image binary_mask;
+	Image input_image_squared;
+	Image local_avg;
+	Image local_std;
 	Image input_reconstruction;
 	Image template_reconstruction;
 	Image current_projection;
+	Image tmp_kernel;
+	Image kernel;
+	Image mask;
 	Image padded_projection;
 
+	ImageFile input_kernel_file;
+
 	Image projection_filter;
+	Image CTF_for_mask;
 
 	Image max_intensity_projection;
 
@@ -515,6 +532,7 @@ bool MatchTemplateApp::DoCalculation()
 	int max_padding = 0; // To restrict histogram calculation
 	float histogram_padding_trim_rescale; // scale the counts to
 
+	float sum = 0.0;
 	// for 5760 this will return
 	// 5832 2     2     2     3     3     3     3     3     3 - this is ~ 10% faster than the previous solution BUT
 	// 6144  2     2     2     2     2     2     2     2     2     2     2     3 is another ~ 5% faster
@@ -564,24 +582,36 @@ bool MatchTemplateApp::DoCalculation()
 	if (factorizable_y - original_input_image_y > max_padding) max_padding = factorizable_y - original_input_image_y;
 
 
-//	wxPrintf("old x, y; new x, y = %i %i %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
-
+	wxPrintf("old x, y; new x, y = %i %i %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
+	N = factorizable_x * factorizable_y;
 	input_image.Resize(factorizable_x, factorizable_y, 1, input_image.ReturnAverageOfRealValuesOnEdges());
 
 	}
-	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_defocus.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_pixel_size.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	correlation_pixel_sum_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	correlation_pixel_sum_of_squares_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	kernel.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	//local_CC.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	local_avg.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	input_image_squared.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	best_defocus.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	best_pixel_size.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	correlation_pixel_sum_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	correlation_pixel_sum_of_squares_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	double *correlation_pixel_sum = new double[input_image.real_memory_allocated];
 	double *correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
 	padded_reference.SetToConstant(0.0f);
+	kernel.SetToConstant(1.0f);
+
+	//local_CC.SetToConstant(0.0f);
+	local_avg.SetToConstant(0.0f);
+	local_std.SetToConstant(0.0f);
+	input_image_squared.SetToConstant(0.0f);
 	max_intensity_projection.SetToConstant(-FLT_MAX);
 	best_psi.SetToConstant(0.0f);
 	best_theta.SetToConstant(0.0f);
@@ -604,6 +634,7 @@ bool MatchTemplateApp::DoCalculation()
 //	input_reconstruction.SwapRealSpaceQuadrants();
 
 	sqrt_input_pixels =  sqrt((double)(input_image.logical_x_dimension * input_image.logical_y_dimension));
+
 	// setup curve
 	histogram_step = (histogram_max - histogram_min) / float(histogram_number_of_points);
 	histogram_min_scaled = histogram_min / sqrt_input_pixels;
@@ -616,16 +647,20 @@ bool MatchTemplateApp::DoCalculation()
 		histogram_data[counter] = 0;
 	}
 
-	CTF input_ctf;
-	input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
 
 	// assume cube
 
 	current_projection.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
+	//tmp_kernel.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), true);
 	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
+	CTF_for_mask.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 	template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
 	if (padding != 1.0f) padded_projection.Allocate(input_reconstruction_file.ReturnXSize() * padding, input_reconstruction_file.ReturnXSize() * padding, false);
 
+	CTF input_ctf;
+	input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
+	input_ctf.SetDefocus((defocus1) / pixel_size, (defocus2) / pixel_size, deg_2_rad(defocus_angle));
+	CTF_for_mask.CalculateCTFImage(input_ctf);
 
 	// angular step
 	float mask_radius_search;
@@ -674,13 +709,14 @@ bool MatchTemplateApp::DoCalculation()
 	// work out the filter to just whiten the image..
 
 	whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+	//rotational_average.SetupXAxis(0.0,template_reconstruction.ReturnMaximumDiagonalRadius(),template_reconstruction.logical_x_dimension);
 	number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+	//number_of_terms_2.SetupXAxis(0.0,template_reconstruction.ReturnMaximumDiagonalRadius(),template_reconstruction.logical_x_dimension);
 
 	wxDateTime my_time_out;
 	wxDateTime my_time_in;
 
 	// remove outliers
-
 	input_image.ReplaceOutliersWithMean(5.0f);
 	input_image.ForwardFFT();
 	input_image.SwapRealSpaceQuadrants();
@@ -695,9 +731,115 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	//input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
-	//exit(-1);
+	input_image.QuickAndDirtyWriteSlice("white.mrc", 1);
 
+	// density mask
+
+	input_kernel_file.OpenFile("average_density.mrc", false);
+	kernel.ReadSlice(&input_kernel_file, 1);
+
+	// calculate number of pixels within mask
+	for (pixel_counter = 0; pixel_counter < kernel.real_memory_allocated; pixel_counter++)
+	{
+		if (kernel.real_values[pixel_counter] != 0)
+		{
+			P = P+1;
+		}
+	}
+
+	//////// Gaussian kernel TODO!!!
+	// generating 5x5 kernel
+	//if (tmp_kernel.is_in_real_space) wxPrintf("tmp in real space\n");
+	//if (kernel.is_in_real_space) wxPrintf("kernel in real space\n");
+	//tmp_kernel.SetToConstant(1.0f);
+	//tmp_kernel.ClipIntoLargerRealSpace2D(&kernel, 0.0f);
+	//kernel.DivideByConstant(kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels);
+
+	// circular mask
+	//kernel.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	//kernel.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	//P = binary_mask.ReturnAverageOfRealValues() * binary_mask.number_of_real_space_pixels;
+	//wxPrintf("sum of values: %f\n", binary_mask.ReturnAverageOfRealValues() * binary_mask.number_of_real_space_pixels);
+	//binary_mask.DivideByConstant(P);
+	//P = kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels;
+
+	wxPrintf("P = %f\n", P);
+	//kernel.ForwardFFT();
+	mask.CopyFrom(&kernel);
+	mask.QuickAndDirtyWriteSlice("mask.mrc",1);
+	//binary_mask.QuickAndDirtyWriteSlice("mask.mrc",1);
+	//binary_mask.ForwardFFT();
+	//binary_mask.SwapRealSpaceQuadrants();
+	//binary_mask.ZeroCentralPixel();
+
+	//test built-in function for findEM
+
+	input_image.QuickAndDirtyWriteSlice("input_pre_normalized.mrc",1);
+  input_image.BackwardFFT();
+	input_image.ComputeLocalMeanAndVarianceMaps(&local_avg, &local_std, &kernel, long(P));
+
+	local_avg.QuickAndDirtyWriteSlice("built_in_local_avg.mrc",1);
+	local_std.QuickAndDirtyWriteSlice("built_in_local_std.mrc",1);
+	input_image.SubtractImage(&local_avg);
+	input_image.DividePixelWise(local_std);
+	input_image.ForwardFFT();
+	input_image.QuickAndDirtyWriteSlice("input_normalized.mrc",1);
+	//kernel.QuickAndDirtyWriteSlice("kernel.mrc",1);
+
+
+	/*
+	local_avg.ForwardFFT();
+
+	for (pixel_counter = 0; pixel_counter < local_avg.real_memory_allocated / 2; pixel_counter ++)
+	{
+		local_avg.complex_values[pixel_counter] = kernel.complex_values[pixel_counter] * input_image.complex_values[pixel_counter];
+	}
+	local_avg.MultiplyByConstant(N / P);
+	local_avg.QuickAndDirtyWriteSlice("local_avg0.mrc",1);
+	//wxPrintf("template dim y = %i\n", current_projection.logical_y_dimension);
+
+
+		//wxPrintf("mean of input image = %f\n", input_image.ReturnAverageOfRealValues());
+		//wxPrintf("SD of input image = %f\n", sqrtf(input_image.ReturnVarianceOfRealValues()));
+
+
+		//P = binary_mask.ReturnAverageOfRealValues() * binary_mask.logical_x_dimension * binary_mask.logical_y_dimension;
+		//wxPrintf("P = %f\n", P);
+		//binary_mask.QuickAndDirtyWriteSlice("mask.mrc",1);
+    //pixel_counter = 0;
+		input_image_squared.CopyFrom(&input_image);
+		input_image_squared.BackwardFFT();
+		input_image_squared.SquareRealValues();
+		input_image_squared.QuickAndDirtyWriteSlice("input_image_sq.mrc",1);
+		//input_image.SwapRealSpaceQuadrants();
+		//input_image.ZeroCentralPixel();
+		input_image_squared.ForwardFFT();
+		local_std.ForwardFFT();
+		for (pixel_counter = 0; pixel_counter < local_std.real_memory_allocated / 2; pixel_counter ++)
+		{
+			local_std.complex_values[pixel_counter] = kernel.complex_values[pixel_counter] * input_image_squared.complex_values[pixel_counter];
+		}
+		local_std.MultiplyByConstant(N / P);
+		local_std.QuickAndDirtyWriteSlice("local_std0.mrc",1);
+
+		local_avg.BackwardFFT();
+		local_std.BackwardFFT();
+		local_avg.SquareRealValues();
+
+		for (pixel_counter=0; pixel_counter < local_avg.real_memory_allocated; pixel_counter++)
+		{
+			local_std.real_values[pixel_counter] -= local_avg.real_values[pixel_counter];
+			local_std.real_values[pixel_counter] = sqrtf(local_std.real_values[pixel_counter]);
+			//if (local_std.real_values[pixel_counter] >= 0.0f) local_std.real_values[pixel_counter] = sqrtf(local_std.real_values[pixel_counter]);
+			//else local_std.real_values[pixel_counter] = 0;
+		}
+		local_avg.QuickAndDirtyWriteSlice("local_avg.mrc",1);
+		local_std.QuickAndDirtyWriteSlice("local_std.mrc",1);
+		//local_avg.QuickAndDirtyWriteSlice("local_avg.mrc",1);
+		//local_std.QuickAndDirtyWriteSlice("local_std.mrc",1);
+		*/
+    pixel_counter = 0;
+    //wxPrintf("Generated binary mask with P = %f non-zero pixels\n", P);
 	// count total searches (lazy)
 
 	total_correlation_positions = 0;
@@ -817,6 +959,7 @@ bool MatchTemplateApp::DoCalculation()
 		template_reconstruction.ZeroCentralPixel();
 		template_reconstruction.SwapRealSpaceQuadrants();
 
+
 //		wxPrintf("First search last search position %d/ %d\n",first_search_position, last_search_position);
 
 		if (use_gpu)
@@ -836,7 +979,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (nThreads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, 				current_projection, mask,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,
@@ -868,6 +1011,9 @@ bool MatchTemplateApp::DoCalculation()
 			input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
 //			input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
 			projection_filter.CalculateCTFImage(input_ctf);
+			//projection_filter.SwapRealSpaceQuadrants();
+			//projection_filter.QuickAndDirtyWriteSlice("projection_filter.mrc",1);
+			//exit(0);
 			projection_filter.ApplyCurveFilter(&whitening_filter);
 
 
@@ -882,20 +1028,20 @@ bool MatchTemplateApp::DoCalculation()
 			{
 				int tIDX = ReturnThreadNumberOfCurrentThread();
 				gpuDev.SetGpu(tIDX);
-
+				wxPrintf("debug: inner loop begins...\n");
 				GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
 
-
+				wxPrintf("debug: inner loop ends...\n");
 				#pragma omp critical
 				{
 
-
+					wxPrintf("debug: copy from host...\n");
 					Image mip_buffer; mip_buffer.CopyFrom(&max_intensity_projection);
 					Image psi_buffer; psi_buffer.CopyFrom(&max_intensity_projection);
 					Image phi_buffer; phi_buffer.CopyFrom(&max_intensity_projection);
 					Image theta_buffer; theta_buffer.CopyFrom(&max_intensity_projection);
-
+					wxPrintf("debug: copy to host...\n");
 					GPU[tIDX].d_max_intensity_projection.CopyDeviceToHost(mip_buffer, true, false);
 					GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
 					GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
@@ -914,13 +1060,13 @@ bool MatchTemplateApp::DoCalculation()
 					sum.SetToConstant(0.0f);
 					sumSq.SetToConstant(0.0f);
 
-
+					wxPrintf("debug: copy sum to host...\n");
 					GPU[tIDX].d_sum3.CopyDeviceToHost(sum,true,false);
 					GPU[tIDX].d_sumSq3.CopyDeviceToHost(sumSq,true,false);
 
 
 					GPU[tIDX].d_max_intensity_projection.Wait();
-
+					wxPrintf("debug: write mip...\n");
 					// TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
 					pixel_counter = 0;
 					for (current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++)
@@ -949,12 +1095,11 @@ bool MatchTemplateApp::DoCalculation()
 						pixel_counter += max_intensity_projection.padding_jump_value;
 					}
 
-
+					wxPrintf("debug: mip updated...\n");
 					GPU[tIDX].histogram.CopyToHostAndAdd(histogram_data);
 
 //					current_correlation_position += GPU[tIDX].total_number_of_cccs_calculated;
 					actual_number_of_ccs_calculated += GPU[tIDX].total_number_of_cccs_calculated;
-
 				} // end of omp critical block
 			} // end of parallel block
 
@@ -968,7 +1113,6 @@ bool MatchTemplateApp::DoCalculation()
 			for (current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++)
 			{
 				//loop over each rotation angle
-
 				//current_rotation = 0;
 				for (current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step)
 				{
@@ -989,7 +1133,7 @@ bool MatchTemplateApp::DoCalculation()
 						template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
 						current_projection.SwapRealSpaceQuadrants();
 					}
-//					current_projection.QuickAndDirtyWriteSlice("proj.mrc", 1);
+					//current_projection.QuickAndDirtyWriteSlice("proj.mrc", 1);
 					//if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_nofilter.mrc", 1);
 
 					current_projection.MultiplyPixelWise(projection_filter);
@@ -1027,25 +1171,57 @@ bool MatchTemplateApp::DoCalculation()
 					current_projection.RealSpaceIntegerShift(best_x, best_y, 0);
 	*/
 					///
-
-
-					current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
-
-
+					//wxPrintf("avg value on edge = %f\n", current_projection.ReturnAverageOfRealValuesOnEdges());
+					//current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges()); //WHY
+					current_projection.AddConstant(-current_projection.ReturnAverageOfRealValues());
 //					variance = current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels;
 //					current_projection.DivideByConstant(sqrtf(variance));
-//					variance = current_projection.ReturnSumOfSquares();
-					variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
-							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
-					current_projection.DivideByConstant(sqrtf(variance));
-					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
+					variance = current_projection.ReturnSumOfSquares() - powf(current_projection.ReturnAverageOfRealValues(), 2);
+				//	variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
+							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2); // this is the var of padded_reference
 
+					current_projection.DivideByConstant(sqrtf(variance));
+					//current_projection.QuickAndDirtyWriteSlice("current_projection_no_edge.mrc",1);
+					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
+					//padded_reference.QuickAndDirtyWriteSlice("padded_reference_no_edge.mrc", 1);
+					//wxPrintf("unpadded template mean = %f\n", current_projection.ReturnAverageOfRealValues());
+					//wxPrintf("unpadded template var = %f\n", sqrtf(current_projection.ReturnVarianceOfRealValues()));
+					/*
+					// test cc scaling
+					kernel.ForwardFFT();
+					kernel.ZeroCentralPixel();
 					padded_reference.ForwardFFT();
+					padded_reference.ZeroCentralPixel();
+
+					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++)
+					{
+						kernel.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * padded_reference.complex_values[pixel_counter];
+					}
+					//kernel.MultiplyByConstant(float(sqrt_input_pixels));
+					kernel.SwapRealSpaceQuadrants();
+					kernel.QuickAndDirtyWriteSlice("scaled_test.mrc",1);
+					exit(-1);
+					*/
+
+
+					padded_reference.MultiplyPixelWise(mask);
+					//for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter ++)
+					//{
+					//	padded_reference.real_values[pixel_counter] = padded_reference.real_values[pixel_counter] * kernel.real_values[pixel_counter];
+						//wxPrintf("mask value at position = %f\n", kernel.real_values[pixel_counter]);
+					//}
+					//padded_reference.QuickAndDirtyWriteSlice("proj_masked.mrc", 1);
+					padded_reference.ForwardFFT();
+
 					// Zeroing the central pixel is probably not doing anything useful...
 					padded_reference.ZeroCentralPixel();
-//					padded_reference.DivideByConstant(sqrtf(variance));
 
-					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
+					//input_image.QuickAndDirtyWriteSlice("input.mrc",1);
+					//input_image.SwapRealSpaceQuadrants();
+					//input_image.ZeroCentralPixel();
+					//wxPrintf("padded ref x dim = %i\n", padded_reference.logical_x_dimension);
+					//wxPrintf("padded ref y dim = %i\n", padded_reference.logical_y_dimension);
+					//wxPrintf("padded ref memory = %ld\n", padded_reference.real_memory_allocated);
 
 #ifdef MKL
 					// Use the MKL
@@ -1057,7 +1233,16 @@ bool MatchTemplateApp::DoCalculation()
 					}
 #endif
 
+
+
+					//padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
 					padded_reference.BackwardFFT();
+					//padded_reference.DividePixelWise(local_std);
+					//for (pixel_counter=0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++)
+					//{
+				//		padded_reference.real_values[pixel_counter] = padded_reference.real_values[pixel_counter] / sqrtf(local_std.real_values[pixel_counter]);
+					//}
+
 //					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
 //					exit(0);
 
@@ -1069,6 +1254,116 @@ bool MatchTemplateApp::DoCalculation()
 ////						padded_reference.real_values[pixel_counter] *= powf(float(padded_reference.number_of_real_space_pixels), 2);
 ////						padded_reference.real_values[pixel_counter] = temp_float;
 //					}
+
+/*
+					current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
+
+//					variance = current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels;
+//					current_projection.DivideByConstant(sqrtf(variance));
+//					variance = current_projection.ReturnSumOfSquares();
+					//variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
+							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
+					//mean = current_projection.ReturnAverageOfRealValues();
+					//variance = current_projection.ReturnVarianceOfRealValues();
+					//for (pixel_counter=0; pixel_counter < current_projection.real_memory_allocated; pixel_counter++)
+					//{
+					//	current_projection.real_values[pixel_counter] -= mean;
+					//}
+					//current_projection.DivideByConstant(sqrtf(variance));
+					//wxPrintf("std = %f\n", sqrtf(variance));
+					//wxPrintf("current_projection mean = %f\n", current_projection.ReturnAverageOfRealValues());
+					//wxPrintf("current_projection SD = %f\n", sqrtf(current_projection.ReturnVarianceOfRealValues()));
+
+					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
+					// scale padded_reference and test if it is normalized TODO!
+					mean = padded_reference.ReturnAverageOfRealValues();
+					variance = padded_reference.ReturnVarianceOfRealValues();
+
+					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter ++)
+					{
+						padded_reference.real_values[pixel_counter] -= mean;
+						padded_reference.real_values[pixel_counter] /= sqrtf(variance);
+						padded_reference.real_values[pixel_counter] *= binary_mask.real_values[pixel_counter];
+					}
+					padded_reference.QuickAndDirtyWriteSlice("padded_reference_masked.mrc",1);
+					//wxPrintf("padded_reference mean = %f\n", padded_reference.ReturnAverageOfRealValues());
+					//wxPrintf("padded_reference SD = %f\n", sqrtf(padded_reference.ReturnVarianceOfRealValues()));
+
+
+					// new variance
+					//template_std = sqrtf(padded_reference.ReturnVarianceOfRealValues());
+					//binary_mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+					//binary_mask.QuickAndDirtyWriteSlice("binary_mask.mrc",1);
+					//sigma_s = sqrtf(padded_reference.ReturnVarianceOfRealValues());
+					padded_reference.ForwardFFT();
+					// Zeroing the central pixel is probably not doing anything useful...
+					padded_reference.ZeroCentralPixel();
+
+
+//					padded_reference.DivideByConstant(sqrtf(variance));
+
+					//mask
+					//local_avg.ForwardFFT();
+					//local_avg.ZeroCentralPixel();
+
+					//local_std.ForwardFFT();
+					//local_std.ZeroCentralPixel();
+
+					//binary_mask.ForwardFFT();
+					//binary_mask.ZeroCentralPixel();
+
+					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
+
+#ifdef MKL
+					// Use the MKL
+					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+#else
+					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
+					{
+						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+						//local_avg.complex_values[pixel_counter] = binary_mask.complex_values[pixel_counter] * input_image.complex_values[pixel_counter];
+						//local_std.complex_values[pixel_counter] = binary_mask.complex_values[pixel_counter] * input_image_squared.complex_values[pixel_counter];
+					}
+#endif
+
+					padded_reference.BackwardFFT();
+					//local_avg.BackwardFFT();
+					//local_std.BackwardFFT();
+					//binary_mask.BackwardFFT();
+
+					for (pixel_counter=0; pixel_counter < local_CC.real_memory_allocated; pixel_counter++)
+					{
+						//local_avg.real_values[pixel_counter]/=P;
+						//local_std.real_values[pixel_counter]/=P;
+						//local_std.real_values[pixel_counter] -= powf(local_avg.real_values[pixel_counter], 2);
+						local_CC.real_values[pixel_counter] = padded_reference.real_values[pixel_counter] / (P * local_std.real_values[pixel_counter]);
+          	//wxPrintf("local std = %f\n", sqrtf(local_std.real_values[pixel_counter]));
+						//wxPrintf("local cc = %f\n", local_CC.real_values[pixel_counter]);
+						//wxPrintf("global cc = %f\n", padded_reference.real_values[pixel_counter]);
+					}
+
+					//padded_reference.QuickAndDirtyWriteSlice("cc_global.mrc", 1);
+					//local_CC.QuickAndDirtyWriteSlice("cc_local.mrc",1);
+					//local_avg.QuickAndDirtyWriteSlice("local_avg.mrc", 1);
+					//local_std.QuickAndDirtyWriteSlice("local_std.mrc", 1);
+
+				//	for (pixel_counter=0; pixel_counter<local_std.real_memory_allocated;pixel_counter++)
+			//		{
+			//			local_std.real_values[pixel_counter] = sqrtf(local_std.real_values[pixel_counter]);
+				//	}
+				//	local_std.QuickAndDirtyWriteSlice("local_std_sqrt.mrc", 1);
+
+
+
+//					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
+//					{
+//						temp_float = padded_reference.real_values[pixel_counter] / variance;
+//						padded_reference.real_values[pixel_counter] = temp_float * padded_reference.real_values[pixel_counter] - powf(temp_float, 2) * variance;
+////						if (pixel_counter == 1000) wxPrintf("l, value = %g %g\n", temp_float, padded_reference.real_values[pixel_counter]);
+////						padded_reference.real_values[pixel_counter] *= powf(float(padded_reference.number_of_real_space_pixels), 2);
+////						padded_reference.real_values[pixel_counter] = temp_float;
+//					}
+*/
 
 					// update mip, and histogram..
 					pixel_counter = 0;
@@ -1091,8 +1386,23 @@ bool MatchTemplateApp::DoCalculation()
 //								correlation_pixel_sum[pixel_counter] = variance;
 							}
 
+/*
+							// my version first mip
+							  if (padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter])
+								{
+									max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
+								  best_psi.real_values[pixel_counter] = current_psi;
+									best_theta.real_values[pixel_counter] = global_euler_search.list_of_search_parameters[current_search_position][1];
+									best_phi.real_values[pixel_counter] = global_euler_search.list_of_search_parameters[current_search_position][0];
+									best_defocus.real_values[pixel_counter] = float(defocus_i) * defocus_step;
+									best_pixel_size.real_values[pixel_counter] = float(size_i) * pixel_size_step;
+//									if (size_i != 0) wxPrintf("size_i = %i\n", size_i);
+//									correlation_pixel_sum[pixel_counter] = variance;
+								}
+*/
 							// histogram
 
+							//current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min_scaled) / histogram_step_scaled);
 							current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min_scaled) / histogram_step_scaled);
 							//current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min) / histogram_step);
 
@@ -1104,10 +1414,10 @@ bool MatchTemplateApp::DoCalculation()
 							pixel_counter++;
 						}
 
+						//pixel_counter+=padded_reference.padding_jump_value;
 						pixel_counter+=padded_reference.padding_jump_value;
 					}
-
-
+/*
 //					correlation_pixel_sum.AddImage(&padded_reference);
 					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 					{
@@ -1121,13 +1431,30 @@ bool MatchTemplateApp::DoCalculation()
 					}
 
 					//max_intensity_projection.QuickAndDirtyWriteSlice("/tmp/mip.mrc", 1);
+*/
+//					correlation_pixel_sum.AddImage(&padded_reference);
+					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
+					{
+						correlation_pixel_sum[pixel_counter] += padded_reference.real_values[pixel_counter];
+					}
+					padded_reference.SquareRealValues();
+//					correlation_pixel_sum_of_squares.AddImage(&padded_reference);
+					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
+					{
+						correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
+					}
+					//max_intensity_projection.QuickAndDirtyWriteSlice("/tmp/mip.mrc", 1);
 
 					current_projection.is_in_real_space = false;
+					//padded_reference.is_in_real_space = true;
 					padded_reference.is_in_real_space = true;
 
 					current_correlation_position++;
 					if (is_running_locally == true) my_progress->Update(current_correlation_position);
-
+					if (current_correlation_position % 100 == 0)
+					{
+						max_intensity_projection.QuickAndDirtyWriteSlice("current_mip.mrc", 1);
+					}
 					if (is_running_locally == false)
 					{
 						actual_number_of_ccs_calculated++;
@@ -1225,8 +1552,6 @@ bool MatchTemplateApp::DoCalculation()
 		expected_threshold = sqrtf(2.0f)*(float)temp_threshold*CCG_NOISE_STDDEV;
 
 //		expected_threshold = sqrtf(2.0f)*cisTEM_erfcinv((2.0f*(1))/((original_input_image_x * original_input_image_y * double(total_correlation_positions))));
-
-
 
 
 		// write out images..

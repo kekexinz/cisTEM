@@ -222,6 +222,8 @@ NVCCFLAGS=" -ccbin $CXX"
 # For now just compile for Volta and Turing arch
 NVCCFLAGS+=" --gpu-architecture=compute_70 --gpu-code=sm_70,sm_75"
 
+# Temporary fix, should be in config.ac FIXME
+NVCCFLAGS+=" -I/groups/grigorieff/home/himesb/thirdParty/fftw338/include "
 
 NVCCFLAGS+=" --default-stream per-thread -m64 -O3 --use_fast_math -Xptxas --warn-on-local-memory-usage,--warn-on-spills, --generate-line-info -Xcompiler= -std=c++11 -DGPU -DSTDC_HEADERS=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_MEMORY_H=1 -DHAVE_STRINGS_H=1 -DHAVE_INTTYPES_H=1 -DHAVE_STDINT_H=1 -DHAVE_UNISTD_H=1 -DHAVE_DLFCN_H=1"
 

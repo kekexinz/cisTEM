@@ -10,12 +10,12 @@ __global__ void MipPixelWiseKernel(const cufftReal*  correlation_output, Peaks* 
                                    __half psi, __half theta, __half phi);
 
 
-TemplateMatchingCore::TemplateMatchingCore() 
+TemplateMatchingCore::TemplateMatchingCore()
 {
 
 };
 
-TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs) 
+TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 {
 
   Init(number_of_jobs);
@@ -25,7 +25,7 @@ TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 
 
 
-TemplateMatchingCore::~TemplateMatchingCore() 
+TemplateMatchingCore::~TemplateMatchingCore()
 {
 
 
@@ -51,6 +51,7 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 								Image &template_reconstruction,
                                 Image &input_image,
                                 Image &current_projection,
+                                Image &mask,
                                 float pixel_size_search_range,
                                 float pixel_size_step,
                                 float pixel_size,
@@ -72,7 +73,7 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
                                 ProgressBar *my_progress,
                                 long total_correlation_positions,
                                 bool is_running_locally)
-                                
+
 {
 
 
@@ -92,11 +93,13 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
     this->template_reconstruction.CopyFrom(&template_reconstruction);
     this->input_image.CopyFrom(&input_image);
     this->current_projection.CopyFrom(&current_projection);
+    this->mask.CopyFrom(&mask);
 
     d_input_image.Init(this->input_image);
     d_input_image.CopyHostToDevice();
 
     d_current_projection.Init(this->current_projection);
+    d_mask.Init(this->mask);
 
     d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_max_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
@@ -125,14 +128,14 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 	this->is_running_locally = is_running_locally;
 
 	this->parent_pointer = parent_pointer;
-    
+
     // For now we are only working on the inner loop, so no need to track best_defocus and best_pixel_size
 
     // At the outset these are all empty cpu images, so don't xfer, just allocate on gpuDev
 
 
 
-    // Transfer the input image_memory_should_not_be_deallocated  
+    // Transfer the input image_memory_should_not_be_deallocated
 
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 
@@ -173,6 +176,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 	int ccc_counter = 0;
 	int current_search_position;
 	float average_on_edge;
+  float average_of_template;
 	float temp_float;
 
 	int thisDevice;
@@ -205,8 +209,8 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			current_projection.SwapRealSpaceQuadrants();
 			current_projection.MultiplyPixelWise(projection_filter);
 			current_projection.BackwardFFT();
-			average_on_edge = current_projection.ReturnAverageOfRealValuesOnEdges();
-
+			//average_on_edge = current_projection.ReturnAverageOfRealValuesOnEdges();
+      average_of_template = current_projection.ReturnAverageOfRealValues();
 
 
 			// Make sure the device has moved on to the padded projection
@@ -216,16 +220,23 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			//// TO THE GPU ////
 			d_current_projection.CopyHostToDevice();
 
-			d_current_projection.AddConstant(-average_on_edge);
+			//d_current_projection.AddConstant(-average_on_edge);
+      d_current_projection.AddConstant(-average_of_template);
 			// The average in the full padded image will be different;
-			average_on_edge *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
+			//average_on_edge *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
+      average_of_template *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
 
-			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_on_edge * average_on_edge)));
+			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_of_template * average_of_template)));
+      //wxPrintf("device current_projection mean=%f\n", d_current_projection.ReturnSumOfRealValues()/(float)d_padded_reference.number_of_real_space_pixels);
+      //wxPrintf("device current_projection var=%f\n", d_current_projection.ReturnSumOfSquares()/(float)d_padded_reference.number_of_real_space_pixels);
+      d_current_projection.CopyDeviceToHost();
+
 
 			d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
 			cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
-
+      d_padded_reference.MultiplyPixelWise(d_mask);
+      
 			// For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
 			// cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
 			// Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
@@ -337,7 +348,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 			} // loop over psi angles
 
-      
+
  	} // end of outer loop euler sphere position
 
 	wxPrintf("\t\t\ntotal number %d\n",ccc_counter);
@@ -531,6 +542,3 @@ __global__ void AccumulateSumsKernel(Stats* my_stats, const int numel, cufftReal
 
     }
 }
-
-
-

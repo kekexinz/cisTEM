@@ -4199,7 +4199,7 @@ float Image::CosineMask(float wanted_mask_radius, float wanted_mask_edge, bool i
 			}
 		}
 	}
-	
+
 	return float(mask_volume);
 }
 
@@ -5275,7 +5275,7 @@ bool Image::IsBinary()
 bool Image::HasNan()
 {
 	MyDebugAssertTrue(is_in_memory, "Memory not allocated");
-	if (is_in_real_space == true) 
+	if (is_in_real_space == true)
 	{
 		long pixel_counter = 0;
 		for ( int k = 0; k < logical_z_dimension; k ++ )
@@ -5297,7 +5297,7 @@ bool Image::HasNan()
 	{
 		for (long pixel_counter = 0; pixel_counter < real_memory_allocated/2 ; pixel_counter ++)
 		{
-			if (std::isnan(abs(complex_values[pixel_counter]))) return true; 
+			if (std::isnan(abs(complex_values[pixel_counter]))) return true;
 		}
 	}
 	return false;
@@ -6599,10 +6599,10 @@ float Image::GetCorrelationWithCTF(CTF ctf)
 			{
 				i_logi = float(i-physical_address_of_box_center_x)*inverse_logical_x_dimension;
 				i_logi_sq = powf(i_logi,2);
-				
+
 				// Where are we?
 				current_spatial_frequency_squared = j_logi_sq + i_logi_sq;
-				
+
 				if (current_spatial_frequency_squared > lowest_freq && current_spatial_frequency_squared < highest_freq)
 				{
 					current_azimuth = atan2f(j_logi,i_logi);
@@ -6614,7 +6614,7 @@ float Image::GetCorrelationWithCTF(CTF ctf)
 					norm_ctf      += pow(current_ctf_value,2);
 
 				} // end of test whether within min,max frequency range
-									
+
 			}
 		}
 	}
@@ -6650,7 +6650,7 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 	const float		inverse_logical_x_dimension = 1.0 / float(logical_x_dimension);
 	const float		inverse_logical_y_dimension = 1.0 / float(logical_y_dimension);
 	float			current_spatial_frequency_squared;
-	
+
 	const float		lowest_freq = powf(ctf.GetLowestFrequencyForFitting(),2);
 	const float		highest_freq = powf(ctf.GetHighestFrequencyForFitting(),2);
 	int				address = 0;
@@ -6661,7 +6661,7 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 	number_of_values = 0;
 	norm_image = 0;
 	image_mean = 0.;
-		
+
 	// Loop over half of the image (ignore Friedel mates)
 	for (j=0;j<logical_y_dimension;j++)
 	{
@@ -6674,10 +6674,10 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 			{
 				i_logi = float(i-physical_address_of_box_center_x)*inverse_logical_x_dimension;
 				i_logi_sq = powf(i_logi,2);
-					
+
 				// Where are we?
 				current_spatial_frequency_squared = j_logi_sq + i_logi_sq;
-					
+
 				if (current_spatial_frequency_squared > lowest_freq && current_spatial_frequency_squared < highest_freq)
 				{
 					current_azimuth = atan2f(j_logi,i_logi);
@@ -6690,13 +6690,13 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 					}
 					number_of_values++;
 				} // end of test whether within min,max frequency range
-					
+
 			}
 		}
 	}
 
 	// Now get sum of squared deviations from mean, more accurate than using raw cross-products
-	if (addresses) 
+	if (addresses)
 	{
 		image_mean = image_sum / number_of_values;
 		for (i = 0; i < number_of_values; i++)
@@ -7647,6 +7647,11 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	// Make a couple of copies of the input image
 	local_mean_map->CopyFrom(this);
 
+	// Make a copy of the mask
+	Image mask_squared;
+	mask_squared.CopyFrom(mask);
+	mask_squared.SquareRealValues();
+	mask_squared.QuickAndDirtyWriteSlice("mask_squared.mrc",1);
 	// Compute the local average in the micrograph, which is the convolution of
 	// the micrograph with the mask
 	// (because we will multiply with the mask FT later on, we do not need to normalize both FTs)
@@ -7704,10 +7709,11 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	// Fourier transforms
 	// (because we will multiply with the mask FT later on, we do not need to normalize both FTs)
 	local_variance_map->ForwardFFT(true);
-
+	mask_squared.ForwardFFT(false);
 
 	// Convolute the squared micrograph with the mask image
-	local_variance_map->MultiplyPixelWise(*mask);
+
+	local_variance_map->MultiplyPixelWise(mask_squared);
 	local_variance_map->SwapRealSpaceQuadrants();
 	local_variance_map->BackwardFFT();
 
@@ -7716,7 +7722,8 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	// Compute the local variance (Eqn 10 in Roseman 2003)
 	for (long address=0; address < real_memory_allocated; address++)
 	{
-		local_variance_map->real_values[address] = (local_variance_map->real_values[address] * inverse_number_of_pixels_within_mask) - powf(local_mean_map->real_values[address] - local_mean_average,2);
+	  local_variance_map->real_values[address] = (local_variance_map->real_values[address] * inverse_number_of_pixels_within_mask) - powf(local_mean_map->real_values[address] - local_mean_average,2);
+		local_variance_map->real_values[address] = sqrtf(local_variance_map->real_values[address]); // standard deviation
 	}
 
 	local_mean_map->object_is_centred_in_box = true;
@@ -7766,7 +7773,7 @@ void Image::SpectrumBoxConvolution(Image *output_image, int box_size, float mini
 	// Addresses
 	long address_within_output = 0;
 	long address_within_input;
- 
+
 	// Starting and ending x indexes of one or two loops for each line
 	int *x1start = new int[logical_x_dimension];
 	int *x1end = new int[logical_x_dimension];
