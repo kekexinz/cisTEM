@@ -585,6 +585,9 @@ bool MatchTemplateApp::DoCalculation()
 	wxPrintf("old x, y; new x, y = %i %i %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
 	N = factorizable_x * factorizable_y;
 	input_image.Resize(factorizable_x, factorizable_y, 1, input_image.ReturnAverageOfRealValuesOnEdges());
+	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	kernel.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+
 	if ( ! is_power_of_two(factorizable_x) && is_power_of_two(factorizable_y) )
 	{
 		// The speedup in the FFT for better factorization is also dependent on the dimension. The full transform (in cufft anyway) is faster if the best dimension is on X.
@@ -596,8 +599,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	}
 	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-	kernel.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+
 	//local_CC.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	local_avg.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
@@ -742,9 +744,14 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.QuickAndDirtyWriteSlice("white.mrc", 1);
 
 	// density mask
-
 	input_kernel_file.OpenFile("average_density.mrc", false);
 	kernel.ReadSlice(&input_kernel_file, 1);
+
+	if (is_rotated_by_90)
+	{
+		kernel.Rotate2DInPlaceBy90Degrees(true);
+		mask.Rotate2DInPlaceBy90Degrees(true);
+	}
 
 	// calculate number of pixels within mask
 	for (pixel_counter = 0; pixel_counter < kernel.real_memory_allocated; pixel_counter++)
@@ -771,10 +778,10 @@ bool MatchTemplateApp::DoCalculation()
 	//binary_mask.DivideByConstant(P);
 	//P = kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels;
 
-	wxPrintf("P = %f\n", P);
+	wxPrintf("number of pixels P = %f\n", P);
 	//kernel.ForwardFFT();
 	mask.CopyFrom(&kernel);
-	mask.QuickAndDirtyWriteSlice("mask.mrc",1);
+	//mask.QuickAndDirtyWriteSlice("mask.mrc",1);
 	//binary_mask.QuickAndDirtyWriteSlice("mask.mrc",1);
 	//binary_mask.ForwardFFT();
 	//binary_mask.SwapRealSpaceQuadrants();
@@ -987,7 +994,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (nThreads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, 				current_projection, mask,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, //mask,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,
@@ -1036,26 +1043,26 @@ bool MatchTemplateApp::DoCalculation()
 			{
 				int tIDX = ReturnThreadNumberOfCurrentThread();
 				gpuDev.SetGpu(tIDX);
-				wxPrintf("debug: inner loop begins...\n");
+				wxPrintf("Thread %d inner loop begins...\n", tIDX);
 				GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
 
-				wxPrintf("debug: inner loop ends...\n");
+				wxPrintf("Thread %d inner loop ends...\n", tIDX);
 				#pragma omp critical
 				{
 
-					wxPrintf("debug: copy from host...\n");
+					wxPrintf("Thread %d copy from host...\n", tIDX);
 					Image mip_buffer; mip_buffer.CopyFrom(&max_intensity_projection);
 					Image psi_buffer; psi_buffer.CopyFrom(&max_intensity_projection);
 					Image phi_buffer; phi_buffer.CopyFrom(&max_intensity_projection);
 					Image theta_buffer; theta_buffer.CopyFrom(&max_intensity_projection);
-					wxPrintf("debug: copy to host...\n");
+					wxPrintf("Thread %d copy to host...\n", tIDX);
 					GPU[tIDX].d_max_intensity_projection.CopyDeviceToHost(mip_buffer, true, false);
 					GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
 					GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
 					GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
-
-//					mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
+					wxPrintf("Thread %d writes mip buffer...\n", tIDX);
+					mip_buffer.QuickAndDirtyWriteSlice("tmp/tmpMipBuffer.mrc",1);
 					// TODO should prob aggregate these across all workers
 				// TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
 					Image sum;
@@ -1068,13 +1075,13 @@ bool MatchTemplateApp::DoCalculation()
 					sum.SetToConstant(0.0f);
 					sumSq.SetToConstant(0.0f);
 
-					wxPrintf("debug: copy sum to host...\n");
+					wxPrintf("Thread %d copy sum to host...\n", tIDX);
 					GPU[tIDX].d_sum3.CopyDeviceToHost(sum,true,false);
 					GPU[tIDX].d_sumSq3.CopyDeviceToHost(sumSq,true,false);
 
 
 					GPU[tIDX].d_max_intensity_projection.Wait();
-					wxPrintf("debug: write mip...\n");
+					wxPrintf("Thread %d updates mip...\n", tIDX);
 					// TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
 					pixel_counter = 0;
 					for (current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++)
@@ -1085,6 +1092,9 @@ bool MatchTemplateApp::DoCalculation()
 
 							if (mip_buffer.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter])
 							{
+
+								wxPrintf("css calculated = %f\n", actual_number_of_ccs_calculated);
+
 								max_intensity_projection.real_values[pixel_counter] = mip_buffer.real_values[pixel_counter];
 								best_psi.real_values[pixel_counter] = psi_buffer.real_values[pixel_counter];
 								best_theta.real_values[pixel_counter] = theta_buffer.real_values[pixel_counter];
@@ -1103,12 +1113,15 @@ bool MatchTemplateApp::DoCalculation()
 						pixel_counter += max_intensity_projection.padding_jump_value;
 					}
 
-					wxPrintf("debug: mip updated...\n");
+					wxPrintf("Thread %d mip updated...\n", tIDX);
 					GPU[tIDX].histogram.CopyToHostAndAdd(histogram_data);
-
+					wxPrintf("actual_number_of_ccs_calculated = %f\n", actual_number_of_ccs_calculated);
 //					current_correlation_position += GPU[tIDX].total_number_of_cccs_calculated;
 					actual_number_of_ccs_calculated += GPU[tIDX].total_number_of_cccs_calculated;
+					wxPrintf("omp block about to end\n");
 				} // end of omp critical block
+				wxPrintf("omp block ends");
+
 			} // end of parallel block
 
 

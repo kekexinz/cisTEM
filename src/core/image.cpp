@@ -7634,6 +7634,7 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	MyDebugAssertTrue(mask->is_in_memory, "Other image memory not allocated");
 	MyDebugAssertTrue(HasSameDimensionsAs(local_mean_map), "Local mean map does not have same dimensions");
 	MyDebugAssertTrue(HasSameDimensionsAs(local_variance_map), "Local variance map does not have same dimensions");
+
 	MyDebugAssertTrue(HasSameDimensionsAs(mask), "Mask does not have the same dimensions");
 
 	// For now, we assume all images start off in real space,

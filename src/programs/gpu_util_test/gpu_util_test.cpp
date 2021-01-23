@@ -42,9 +42,9 @@ bool GpuUtilTest::DoCalculation()
   int gpuID = 0;
   wxPrintf("I made it here\n");
 
-  
 
-}	
+
+}
 
 void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs)
 {
@@ -88,6 +88,7 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs)
 	    	Image projection_filter;
 	    	Image input_image;
 	    	Image current_projection;
+				//Image mask;
 	    	Image padded_reference;
 	    	Image max_intensity_projection;
 	    	Image best_psi;
@@ -104,6 +105,7 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs)
 			projection_filter.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/projection_filter.mrc",1);
 			input_image.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/input_image.mrc",1);
 			current_projection.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/current_projection.mrc",1);
+			//mask.QuickAndDirtyReadSlice("/groups/grigorieff/home/zhangk/projects/ribosome/mask.mrc",1); // FIX ME
 			padded_reference.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/padded_reference.mrc",1);
 
 
@@ -169,7 +171,7 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs)
 			histogram_min_scaled = histogram_min / double(sqrt(input_image.logical_x_dimension * input_image.logical_y_dimension));
 			histogram_step_scaled = histogram_step / double(sqrt(input_image.logical_x_dimension * input_image.logical_y_dimension));
 
-			GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+			GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, //mask,
 					pixel_size_search_range, pixel_size_step, pixel_size,
 					defocus_search_range, defocus_step, defocus1, defocus2,
 					psi_max, psi_start, psi_step,

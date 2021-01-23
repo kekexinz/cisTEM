@@ -66,7 +66,7 @@ public:
 	// CPU images to be passed in -
 	Image template_reconstruction;
 	Image current_projection;
-	Image mask;
+	//Image mask;
 	Image input_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
 
 
@@ -94,7 +94,7 @@ public:
 	GpuImage d_input_image;
 	GpuImage d_current_projection;
 	GpuImage d_padded_reference;
-	GpuImage d_mask;
+	//GpuImage d_mask;
 
 
 	// Search range parameters
@@ -144,7 +144,7 @@ public:
 			Image &template_reconstruction,
 			Image &input_image,
 			Image &current_projection,
-			Image &mask,
+			//Image &mask,
 			float pixel_size_search_range,
 			float pixel_size_step,
 			float pixel_size,
