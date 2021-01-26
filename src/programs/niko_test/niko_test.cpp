@@ -37,9 +37,38 @@ bool NikoTestApp::DoCalculation()
 	float sum_of_peaks;
 	ImageFile input_reconstruction_file;
 	ImageFile input_search_image_file;
+
+	/*
+	// scale mip
+	ImageFile mip_file;
+	ImageFile input_kernel_file;
 	Image input_image;
 	Image input_reconstruction;
+	Image mip;
+	Image kernel;
+	float P=0;
+	int pixel_counter;
+	Image local_avg;
+	Image local_std;
+	float pixel_size = 1.06;
+	mip_file.OpenFile("default_program/LSU_mip.mrc",false);
+	mip.ReadSlice(&mip_file, 1);
+	kernel.Allocate(mip.logical_x_dimension, mip.logical_y_dimension, true);
+	kernel.SetToConstant(1.0f);
+	kernel.CosineMask(384 * pixel_size / 2, 1, false, true, 0.0);
+	P = kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels;
+	wxPrintf("mip dimension %i %i\n", mip.logical_x_dimension, mip.logical_y_dimension);
+	wxPrintf("kernel dimension %i %i\n", kernel.logical_x_dimension, kernel.logical_y_dimension);
+	local_avg.Allocate(mip.logical_x_dimension, mip.logical_y_dimension, true);
+	local_std.Allocate(mip.logical_x_dimension, mip.logical_y_dimension, true);
 
+	mip.ComputeLocalMeanAndVarianceMaps(&local_avg, &local_std, &kernel, long(P));
+	mip.SubtractImage(&local_avg);
+	mip.DividePixelWise(local_std);
+	mip.QuickAndDirtyWriteSlice("default_program/mip_normalized.mrc",1);
+	*/
+
+	// compute average density from a set of projections
 	AnglesAndShifts angles;
 	EulerSearch global_euler_search;
 
@@ -116,6 +145,8 @@ bool NikoTestApp::DoCalculation()
 	input_image.ReadSlice(&input_search_image_file, 1);
 	input_reconstruction_file.OpenFile("6q8y_LSU_to_model5_bfactor_85_pix1.06.mrc", false);
 	input_reconstruction.ReadSlices(&input_reconstruction_file, 1, input_reconstruction_file.ReturnNumberOfSlices());
+
+
 	wxPrintf("template dim x = %i\n", input_reconstruction.logical_x_dimension);
 	wxPrintf("template dim y = %i\n", input_reconstruction.logical_y_dimension);
 	wxPrintf("template dim z = %i\n", input_reconstruction.logical_z_dimension);
@@ -154,7 +185,7 @@ bool NikoTestApp::DoCalculation()
 			average_density.AddImage(&padded_reference);
 			total_search_position++;
 
-			/*
+
 			if (total_search_position == 1)
 			{
 				if (average_density.is_in_real_space) wxPrintf("avg in real space\n");
@@ -162,7 +193,7 @@ bool NikoTestApp::DoCalculation()
 				average_density.QuickAndDirtyWriteSlice("total.mrc",1);
 				exit(0);
 			}
-			*/
+
 		}
 	}
 	average_density.DivideByConstant(total_search_position);
