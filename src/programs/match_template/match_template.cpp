@@ -742,7 +742,7 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
 	input_image.QuickAndDirtyWriteSlice("white.mrc", 1);
-
+	
 	// density mask
 	input_kernel_file.OpenFile("average_density.mrc", false);
 	kernel.ReadSlice(&input_kernel_file, 1);
@@ -761,7 +761,7 @@ bool MatchTemplateApp::DoCalculation()
 			P = P+1;
 		}
 	}
-	
+
 	//////// Gaussian kernel TODO!!!
 	// generating 5x5 kernel
 	//if (tmp_kernel.is_in_real_space) wxPrintf("tmp in real space\n");
@@ -792,14 +792,18 @@ bool MatchTemplateApp::DoCalculation()
 
   input_image.BackwardFFT();
 	input_image.ComputeLocalMeanAndVarianceMaps(&local_avg, &local_std, &kernel, long(P));
-
+	/*
+	for (pixel_counter=0; pixel_counter < local_std.real_memory_allocated; pixel_counter++)
+	{
+		local_std.real_values[pixel_counter] = 1.0 / local_std.real_values[pixel_counter];
+	}
+	*/
 	local_avg.QuickAndDirtyWriteSlice("built_in_local_avg.mrc",1);
 	local_std.QuickAndDirtyWriteSlice("built_in_local_std.mrc",1);
 	input_image.SubtractImage(&local_avg);
 	input_image.DividePixelWise(local_std);
 	input_image.ForwardFFT();
-	input_image.QuickAndDirtyWriteSlice("input_normalized.mrc",1);
-	//kernel.QuickAndDirtyWriteSlice("kernel.mrc",1);
+	kernel.QuickAndDirtyWriteSlice("kernel.mrc",1);
 
 
 	/*
@@ -994,7 +998,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (nThreads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, mask,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, mask, //local_std,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,
