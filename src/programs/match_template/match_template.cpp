@@ -613,6 +613,7 @@ bool MatchTemplateApp::DoCalculation()
 //	input_reconstruction.SwapRealSpaceQuadrants();
 
 	sqrt_input_pixels =  sqrt((double)(input_image.logical_x_dimension * input_image.logical_y_dimension));
+
 	// setup curve
 	histogram_step = (histogram_max - histogram_min) / float(histogram_number_of_points);
 	histogram_min_scaled = histogram_min / sqrt_input_pixels;
@@ -704,7 +705,7 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	//input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
+	//input_image.QuickAndDirtyWriteSlice("tmp/white.mrc", 1);
 	//exit(-1);
 
 	// count total searches (lazy)
@@ -1054,7 +1055,8 @@ bool MatchTemplateApp::DoCalculation()
 					padded_reference.ZeroCentralPixel();
 //					padded_reference.DivideByConstant(sqrtf(variance));
 
-					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
+					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("tmp/proj.mrc", 1);
+					//exit(0);
 
 #ifdef MKL
 					// Use the MKL
@@ -1067,8 +1069,8 @@ bool MatchTemplateApp::DoCalculation()
 #endif
 
 					padded_reference.BackwardFFT();
-//					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-//					exit(0);
+					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
+					exit(0);
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
@@ -1163,6 +1165,7 @@ bool MatchTemplateApp::DoCalculation()
 	if (is_rotated_by_90)
 	{
 		// swap back all the images prior to re-sizing
+		input_image.BackwardFFT();
 		input_image.Rotate2DInPlaceBy90Degrees(false);
 		max_intensity_projection.Rotate2DInPlaceBy90Degrees(false);
 
