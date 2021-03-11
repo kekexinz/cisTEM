@@ -51,7 +51,7 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 								Image &template_reconstruction,
                                 Image &input_image,
                                 Image &current_projection,
-                                Image &mask,
+                                //Image &mask,
                                 //Image &inverse_local_std,
                                 float pixel_size_search_range,
                                 float pixel_size_step,
@@ -94,16 +94,20 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
     this->template_reconstruction.CopyFrom(&template_reconstruction);
     this->input_image.CopyFrom(&input_image);
     this->current_projection.CopyFrom(&current_projection);
-    this->mask.CopyFrom(&mask);
+    //this->mask.CopyFrom(&mask);
     //this->inverse_local_std.CopyFrom(&inverse_local_std);
 
     d_input_image.Init(this->input_image);
     d_input_image.CopyHostToDevice();
 
     d_current_projection.Init(this->current_projection);
-    d_mask.Init(this->mask);
-    //d_inverse_local_std.Init(this->inverse_local_std);
 
+    //d_mask.Init(this->mask);
+    //d_mask.CopyHostToDevice();
+    //wxPrintf("d_mask sum of squares = %f\n", d_mask.ReturnSumOfSquares()); Why thread 0 has strange value
+    //d_inverse_local_std.Init(this->inverse_local_std);
+    //d_inverse_local_std.CopyHostToDevice();
+    //wxPrintf("d_inverse_local_std sum of squares = %f\n", d_inverse_local_std.ReturnSumOfSquares());// Why thread 0 has strange value
     d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_max_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_psi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
@@ -146,7 +150,6 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 
 void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel, float c_defocus, int threadIDX, long &current_correlation_position)
 {
-
 	// Make sure we are starting with zeros
 	d_max_intensity_projection.Zeros();
 	d_best_psi.Zeros();
@@ -178,8 +181,8 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 	int ccc_counter = 0;
 	int current_search_position;
-	//float average_on_edge;
-  float average_of_template;
+	float average_on_edge;
+  //float average_of_template;
 	float temp_float;
 
 	int thisDevice;
@@ -212,8 +215,8 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			current_projection.SwapRealSpaceQuadrants();
 			current_projection.MultiplyPixelWise(projection_filter);
 			current_projection.BackwardFFT();
-			//average_on_edge = current_projection.ReturnAverageOfRealValuesOnEdges();
-      average_of_template = current_projection.ReturnAverageOfRealValues();
+			average_on_edge = current_projection.ReturnAverageOfRealValuesOnEdges();
+      //average_of_template = current_projection.ReturnAverageOfRealValues();
 
 
 			// Make sure the device has moved on to the padded projection
@@ -223,30 +226,26 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			//// TO THE GPU ////
 			d_current_projection.CopyHostToDevice();
 
-			//d_current_projection.AddConstant(-average_on_edge);
-      d_current_projection.AddConstant(-average_of_template);
+			d_current_projection.AddConstant(-average_on_edge);
+      //d_current_projection.AddConstant(-average_of_template);
 			// The average in the full padded image will be different;
-			//average_on_edge *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
-      average_of_template *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
+			average_on_edge *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
+      //average_of_template *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
 
-			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_of_template * average_of_template)));
+			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_on_edge * average_on_edge)));
       //wxPrintf("device current_projection mean=%f\n", d_current_projection.ReturnSumOfRealValues()/(float)d_padded_reference.number_of_real_space_pixels);
       //wxPrintf("device current_projection var=%f\n", d_current_projection.ReturnSumOfSquares()/(float)d_padded_reference.number_of_real_space_pixels);
       //d_current_projection.CopyDeviceToHost(); ///ATTENTION!
-
-
 			d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
 			cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
-      d_mask.CopyHostToDevice();
-      d_padded_reference.MultiplyPixelWise(d_mask);
+      //d_padded_reference.MultiplyPixelWise(d_mask);
 			// For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
 			// cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
 			// Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
 			d_padded_reference.ForwardFFT(false);
 			//      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
 			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
-      //d_inverse_local_std.CopyHostToDevice();
       //d_padded_reference.MultiplyPixelWise(d_inverse_local_std);
 //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
 
@@ -353,31 +352,25 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 			} // loop over psi angles
 
-
  	} // end of outer loop euler sphere position
 
 	wxPrintf("\t\t\ntotal number %d\n",ccc_counter);
 
     cudaStreamWaitEvent(cudaStreamPerThread,gpu_work_is_done_Event, 0);
-
 	this->AccumulateSums(my_stats, d_sum1, d_sumSq1);
 
 	d_sum2.AddImage(d_sum1);
 	d_sumSq2.AddImage(d_sumSq1);
-
 	d_sum3.AddImage(d_sum2);
 	d_sumSq3.AddImage(d_sumSq2);
 
 	this->MipToImage((const Peaks *)my_peaks, d_max_intensity_projection, d_best_psi, d_best_theta, d_best_phi);
-
 	MyAssertTrue(histogram.is_allocated_histogram, "Trying to accumulate a histogram that has not been initialized!")
 	histogram.Accumulate(d_padded_reference);
-
 	cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 
 	cudaErr(cudaFree(my_peaks));
 	cudaErr(cudaFree(my_stats));
-
 }
 
 

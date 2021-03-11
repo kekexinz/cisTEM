@@ -7653,10 +7653,10 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	local_mean_map->CopyFrom(this);
 
 	// Make a copy of the mask
-	Image mask_squared;
-	mask_squared.CopyFrom(mask);
-	mask_squared.SquareRealValues();
-	mask_squared.QuickAndDirtyWriteSlice("mask_squared.mrc",1);
+	//Image mask_squared;
+	//mask_squared.CopyFrom(mask);
+	//mask_squared.SquareRealValues();
+	//mask_squared.QuickAndDirtyWriteSlice("mask_squared.mrc",1);
 	// Compute the local average in the micrograph, which is the convolution of
 	// the micrograph with the mask
 	// (because we will multiply with the mask FT later on, we do not need to normalize both FTs)
@@ -7714,11 +7714,11 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	// Fourier transforms
 	// (because we will multiply with the mask FT later on, we do not need to normalize both FTs)
 	local_variance_map->ForwardFFT(true);
-	mask_squared.ForwardFFT(false);
+	//mask_squared.ForwardFFT(false);
 
 	// Convolute the squared micrograph with the mask image
 
-	local_variance_map->MultiplyPixelWise(mask_squared);
+	local_variance_map->MultiplyPixelWise(*mask);
 	local_variance_map->SwapRealSpaceQuadrants();
 	local_variance_map->BackwardFFT();
 
@@ -7728,7 +7728,6 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image *local_mean_map, Image *local_
 	for (long address=0; address < real_memory_allocated; address++)
 	{
 	  local_variance_map->real_values[address] = (local_variance_map->real_values[address] * inverse_number_of_pixels_within_mask) - powf(local_mean_map->real_values[address] - local_mean_average,2);
-		local_variance_map->real_values[address] = sqrtf(local_variance_map->real_values[address]); // standard deviation
 	}
 
 	local_mean_map->object_is_centred_in_box = true;

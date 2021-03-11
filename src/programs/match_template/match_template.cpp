@@ -483,19 +483,21 @@ bool MatchTemplateApp::DoCalculation()
 //	wxPrintf("Removing %d pixels around the edge.\n", remove_npix_from_edge);
 
 	Image input_image;
-//	Image local_CC;
 	Image padded_reference;
-	//Image binary_mask;
-	Image input_image_squared;
+	//Image input_image_copy;
 	Image local_avg;
 	Image local_std;
+	//Image inverse_local_std;
 	Image input_reconstruction;
 	Image template_reconstruction;
 	Image current_projection;
-	Image tmp_kernel;
+	//Image tmp_kernel;
 	Image kernel;
 	Image mask;
+	Image mask_copy;
 	Image padded_projection;
+
+	Image img;
 
 	ImageFile input_kernel_file;
 
@@ -534,6 +536,10 @@ bool MatchTemplateApp::DoCalculation()
 	float histogram_padding_trim_rescale; // scale the counts to
 
 	float sum = 0.0;
+
+	float scaling_factor = 0.0f;
+	float epsilon = 0.000001f;
+
 	// for 5760 this will return
 	// 5832 2     2     2     3     3     3     3     3     3 - this is ~ 10% faster than the previous solution BUT
 	if (DO_FACTORIZATION)
@@ -585,8 +591,6 @@ bool MatchTemplateApp::DoCalculation()
 	wxPrintf("old x, y; new x, y = %i %i %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
 	N = factorizable_x * factorizable_y;
 	input_image.Resize(factorizable_x, factorizable_y, 1, input_image.ReturnAverageOfRealValuesOnEdges());
-	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-	kernel.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 
 	if ( ! is_power_of_two(factorizable_x) && is_power_of_two(factorizable_y) )
 	{
@@ -598,12 +602,14 @@ bool MatchTemplateApp::DoCalculation()
 	}
 
 	}
+	img.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-
-	//local_CC.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	mask_copy.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	local_avg.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-	input_image_squared.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	//inverse_local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+	//input_image_copy.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
 	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
@@ -615,13 +621,14 @@ bool MatchTemplateApp::DoCalculation()
 	double *correlation_pixel_sum = new double[input_image.real_memory_allocated];
 	double *correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
+	img.SetToConstant(0.0f);
 	padded_reference.SetToConstant(0.0f);
-	kernel.SetToConstant(1.0f);
-
-	//local_CC.SetToConstant(0.0f);
-	local_avg.SetToConstant(0.0f);
-	local_std.SetToConstant(0.0f);
-	input_image_squared.SetToConstant(0.0f);
+	mask.SetToConstant(1.0f);
+	mask_copy.SetToConstant(0.0f);
+	//local_avg.SetToConstant(0.0f);
+	//local_std.SetToConstant(0.0f);
+	//inverse_local_std.SetToConstant(0.0f);
+	//input_image_copy.SetToConstant(0.0f);
 	max_intensity_projection.SetToConstant(-FLT_MAX);
 	best_psi.SetToConstant(0.0f);
 	best_theta.SetToConstant(0.0f);
@@ -636,6 +643,7 @@ bool MatchTemplateApp::DoCalculation()
 	{
 		input_reconstruction.Resize(input_reconstruction.logical_x_dimension * padding, input_reconstruction.logical_y_dimension * padding, input_reconstruction.logical_z_dimension * padding, input_reconstruction.ReturnAverageOfRealValuesOnEdges());
 	}
+
 //	input_reconstruction.ForwardFFT();
 	//input_reconstruction.CosineMask(0.1, 0.01, true);
 	//input_reconstruction.Whiten();
@@ -661,7 +669,8 @@ bool MatchTemplateApp::DoCalculation()
 	// assume cube
 
 	current_projection.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
-	//tmp_kernel.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), true);
+	kernel.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), true);
+	kernel.SetToConstant(1.0f);
 	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 	CTF_for_mask.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 	template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
@@ -742,7 +751,7 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
 	input_image.QuickAndDirtyWriteSlice("white.mrc", 1);
-	
+	/*
 	// density mask
 	input_kernel_file.OpenFile("average_density.mrc", false);
 	kernel.ReadSlice(&input_kernel_file, 1);
@@ -761,7 +770,7 @@ bool MatchTemplateApp::DoCalculation()
 			P = P+1;
 		}
 	}
-
+	*/
 	//////// Gaussian kernel TODO!!!
 	// generating 5x5 kernel
 	//if (tmp_kernel.is_in_real_space) wxPrintf("tmp in real space\n");
@@ -770,41 +779,60 @@ bool MatchTemplateApp::DoCalculation()
 	//tmp_kernel.ClipIntoLargerRealSpace2D(&kernel, 0.0f);
 	//kernel.DivideByConstant(kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels);
 
-	/*
+
 	// circular mask
-	kernel.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
-	//kernel.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	wxPrintf("dimension of mask: x = %i  y = %i\n", kernel.logical_x_dimension, kernel.logical_y_dimension);
+	P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
 	//P = binary_mask.ReturnAverageOfRealValues() * binary_mask.number_of_real_space_pixels;
-	//wxPrintf("sum of values: %f\n", binary_mask.ReturnAverageOfRealValues() * binary_mask.number_of_real_space_pixels);
+	wxPrintf("sum of values: %f\n", mask.ReturnAverageOfRealValues() * mask.number_of_real_space_pixels);
 	//binary_mask.DivideByConstant(P);
-	P = kernel.ReturnAverageOfRealValues() * kernel.number_of_real_space_pixels;
-	*/
-	wxPrintf("number of pixels P = %f\n", P);
-	//kernel.ForwardFFT();
-	mask.CopyFrom(&kernel);
-	//mask.QuickAndDirtyWriteSlice("mask.mrc",1);
-	//binary_mask.QuickAndDirtyWriteSlice("mask.mrc",1);
-	//binary_mask.ForwardFFT();
-	//binary_mask.SwapRealSpaceQuadrants();
-	//binary_mask.ZeroCentralPixel();
+	//P = mask.ReturnAverageOfRealValues() * mask.number_of_real_space_pixels;
 
-	//test built-in function for findEM
+	wxPrintf("P = %f\n", P);
+	mask.QuickAndDirtyWriteSlice("circular_mask.mrc",1);
+	mask_copy.CopyFrom(&mask);
 
-  input_image.BackwardFFT();
-	input_image.ComputeLocalMeanAndVarianceMaps(&local_avg, &local_std, &kernel, long(P));
 	/*
-	for (pixel_counter=0; pixel_counter < local_std.real_memory_allocated; pixel_counter++)
+	// Implement local mean and var from Forster (2002) paper
+	// Image is now whitened and in fourier space
+	input_image_copy.CopyFrom(&input_image); // input_image now in fourier space
+	kernel.ForwardFFT();
+	local_avg.ForwardFFT();
+	for (pixel_counter = 0; pixel_counter < local_avg.real_memory_allocated / 2; pixel_counter ++)
 	{
-		local_std.real_values[pixel_counter] = 1.0 / local_std.real_values[pixel_counter];
+		local_avg.complex_values[pixel_counter] = input_image_copy.complex_values[pixel_counter] * conj(kernel.complex_values[pixel_counter]);
 	}
+	input_image_copy.SubtractImage(&local_avg); // I' = original_image - Ix_bar
+	input_image_copy.BackwardFFT();
+	input_image_copy.SquareRealValues(); // I'^2
+	input_image_copy.ForwardFFT();
+	local_std.ForwardFFT();
+	for (pixel_counter = 0; pixel_counter < local_avg.real_memory_allocated / 2; pixel_counter ++)
+	{
+		local_std.complex_values[pixel_counter] = input_image_copy.complex_values[pixel_counter] * conj(kernel.complex_values[pixel_counter]);
+	}
+	local_std.BackwardFFT();
+	local_std.SquareRootRealValues();
+	inverse_local_std.CopyFrom(&local_std);
+	inverse_local_std.TakeReciprocalRealValues();
+	inverse_local_std.QuickAndDirtyWriteSlice("inverse_local_std.mrc",1);
 	*/
+
+
+	// built-in function for findEM
+  input_image.BackwardFFT();
+	wxPrintf("mask dimension: %i %i\n", mask.logical_x_dimension, mask.logical_y_dimension);
+	wxPrintf("image dimension: %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension);
+	input_image.ComputeLocalMeanAndVarianceMaps(&local_avg, &local_std, &mask, long(P));
 	local_avg.QuickAndDirtyWriteSlice("built_in_local_avg.mrc",1);
+	local_std.SquareRootRealValues();
 	local_std.QuickAndDirtyWriteSlice("built_in_local_std.mrc",1);
+
 	input_image.SubtractImage(&local_avg);
 	input_image.DividePixelWise(local_std);
+	input_image.QuickAndDirtyWriteSlice("local_normed_image.mrc",1);
+	exit(0);
 	input_image.ForwardFFT();
-	kernel.QuickAndDirtyWriteSlice("kernel.mrc",1);
-
 
 	/*
 	local_avg.ForwardFFT();
@@ -826,17 +854,17 @@ bool MatchTemplateApp::DoCalculation()
 		//wxPrintf("P = %f\n", P);
 		//binary_mask.QuickAndDirtyWriteSlice("mask.mrc",1);
     //pixel_counter = 0;
-		input_image_squared.CopyFrom(&input_image);
-		input_image_squared.BackwardFFT();
-		input_image_squared.SquareRealValues();
-		input_image_squared.QuickAndDirtyWriteSlice("input_image_sq.mrc",1);
+		input_image_copyd.CopyFrom(&input_image);
+		input_image_copyd.BackwardFFT();
+		input_image_copyd.SquareRealValues();
+		input_image_copyd.QuickAndDirtyWriteSlice("input_image_sq.mrc",1);
 		//input_image.SwapRealSpaceQuadrants();
 		//input_image.ZeroCentralPixel();
-		input_image_squared.ForwardFFT();
+		input_image_copyd.ForwardFFT();
 		local_std.ForwardFFT();
 		for (pixel_counter = 0; pixel_counter < local_std.real_memory_allocated / 2; pixel_counter ++)
 		{
-			local_std.complex_values[pixel_counter] = kernel.complex_values[pixel_counter] * input_image_squared.complex_values[pixel_counter];
+			local_std.complex_values[pixel_counter] = kernel.complex_values[pixel_counter] * input_image_copyd.complex_values[pixel_counter];
 		}
 		local_std.MultiplyByConstant(N / P);
 		local_std.QuickAndDirtyWriteSlice("local_std0.mrc",1);
@@ -857,8 +885,7 @@ bool MatchTemplateApp::DoCalculation()
 		//local_avg.QuickAndDirtyWriteSlice("local_avg.mrc",1);
 		//local_std.QuickAndDirtyWriteSlice("local_std.mrc",1);
 		*/
-    pixel_counter = 0;
-    //wxPrintf("Generated binary mask with P = %f non-zero pixels\n", P);
+
 	// count total searches (lazy)
 
 	total_correlation_positions = 0;
@@ -998,7 +1025,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (nThreads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, mask, //local_std,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, //mask, inverse_local_std,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,
@@ -1006,11 +1033,10 @@ bool MatchTemplateApp::DoCalculation()
 								histogram_min_scaled, histogram_step_scaled,histogram_number_of_points,
 								max_padding, t_first_search_position, t_last_search_position,
 								my_progress, total_correlation_positions_per_thread, is_running_locally);
-
 				wxPrintf("%d\n",tIDX);
 				wxPrintf("%d\n", t_first_search_position);
 				wxPrintf("%d\n", t_last_search_position);
-				wxPrintf("Staring TemplateMatchingCore object %d to work on position range %d-%d\n", tIDX, t_first_search_position, t_last_search_position);
+				wxPrintf("Starting TemplateMatchingCore object %d to work on position range %d-%d\n", tIDX, t_first_search_position, t_last_search_position);
 
 			first_gpu_loop = false;
 
@@ -1030,9 +1056,6 @@ bool MatchTemplateApp::DoCalculation()
 			input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
 //			input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
 			projection_filter.CalculateCTFImage(input_ctf);
-			//projection_filter.SwapRealSpaceQuadrants();
-			//projection_filter.QuickAndDirtyWriteSlice("projection_filter.mrc",1);
-			//exit(0);
 			projection_filter.ApplyCurveFilter(&whitening_filter);
 
 
@@ -1047,8 +1070,8 @@ bool MatchTemplateApp::DoCalculation()
 			{
 				int tIDX = ReturnThreadNumberOfCurrentThread();
 				gpuDev.SetGpu(tIDX);
-				GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
+				GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
 				#pragma omp critical
 				{
@@ -1057,11 +1080,13 @@ bool MatchTemplateApp::DoCalculation()
 					Image psi_buffer; psi_buffer.CopyFrom(&max_intensity_projection);
 					Image phi_buffer; phi_buffer.CopyFrom(&max_intensity_projection);
 					Image theta_buffer; theta_buffer.CopyFrom(&max_intensity_projection);
+
 					GPU[tIDX].d_max_intensity_projection.CopyDeviceToHost(mip_buffer, true, false);
 					GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
 					GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
 					GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
-					//mip_buffer.QuickAndDirtyWriteSlice("tmp/tmpMipBuffer.mrc",1);
+
+//					mip_buffer.QuickAndDirtyWriteSlice("tmpMipBuffer.mrc",1);
 					// TODO should prob aggregate these across all workers
 				// TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
 					Image sum;
@@ -1074,12 +1099,12 @@ bool MatchTemplateApp::DoCalculation()
 					sum.SetToConstant(0.0f);
 					sumSq.SetToConstant(0.0f);
 
+
 					GPU[tIDX].d_sum3.CopyDeviceToHost(sum,true,false);
 					GPU[tIDX].d_sumSq3.CopyDeviceToHost(sumSq,true,false);
 
-
 					GPU[tIDX].d_max_intensity_projection.Wait();
-					// TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
+ 					// TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
 					pixel_counter = 0;
 					for (current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++)
 					{
@@ -1181,48 +1206,32 @@ bool MatchTemplateApp::DoCalculation()
 					current_projection.RealSpaceIntegerShift(best_x, best_y, 0);
 	*/
 					///
+
 					//wxPrintf("avg value on edge = %f\n", current_projection.ReturnAverageOfRealValuesOnEdges());
-					//current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges()); //WHY
-					current_projection.AddConstant(-current_projection.ReturnAverageOfRealValues());
+					current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges()); //WHY
+					//current_projection.AddConstant(-current_projection.ReturnAverageOfRealValues());
 //					variance = current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels;
 //					current_projection.DivideByConstant(sqrtf(variance));
-					variance = current_projection.ReturnSumOfSquares() - powf(current_projection.ReturnAverageOfRealValues(), 2);
-				//	variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
+					//variance = current_projection.ReturnSumOfSquares() - powf(current_projection.ReturnAverageOfRealValues(), 2);
+					variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
 							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2); // this is the var of padded_reference
 
 					current_projection.DivideByConstant(sqrtf(variance));
-					//current_projection.QuickAndDirtyWriteSlice("current_projection_no_edge.mrc",1);
 					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
-					//padded_reference.QuickAndDirtyWriteSlice("padded_reference_no_edge.mrc", 1);
-					//wxPrintf("unpadded template mean = %f\n", current_projection.ReturnAverageOfRealValues());
-					//wxPrintf("unpadded template var = %f\n", sqrtf(current_projection.ReturnVarianceOfRealValues()));
-					/*
-					// test cc scaling
-					kernel.ForwardFFT();
-					kernel.ZeroCentralPixel();
-					padded_reference.ForwardFFT();
-					padded_reference.ZeroCentralPixel();
 
-					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++)
-					{
-						kernel.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * padded_reference.complex_values[pixel_counter];
-					}
-					//kernel.MultiplyByConstant(float(sqrt_input_pixels));
-					kernel.SwapRealSpaceQuadrants();
-					kernel.QuickAndDirtyWriteSlice("scaled_test.mrc",1);
-					exit(-1);
-					*/
+					//padded_reference.MultiplyPixelWise(mask_copy);
+					//variance = padded_reference.ReturnSumOfSquares() - powf(padded_reference.ReturnAverageOfRealValues(), 2);
 
 
-					padded_reference.MultiplyPixelWise(mask);
 					//for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter ++)
 					//{
 					//	padded_reference.real_values[pixel_counter] = padded_reference.real_values[pixel_counter] * kernel.real_values[pixel_counter];
 						//wxPrintf("mask value at position = %f\n", kernel.real_values[pixel_counter]);
 					//}
 					//padded_reference.QuickAndDirtyWriteSlice("proj_masked.mrc", 1);
-					padded_reference.ForwardFFT();
 
+				//	padded_reference.ForwardFFT(false); // phase-only
+					padded_reference.ForwardFFT();
 					// Zeroing the central pixel is probably not doing anything useful...
 					padded_reference.ZeroCentralPixel();
 
@@ -1232,31 +1241,25 @@ bool MatchTemplateApp::DoCalculation()
 					//wxPrintf("padded ref x dim = %i\n", padded_reference.logical_x_dimension);
 					//wxPrintf("padded ref y dim = %i\n", padded_reference.logical_y_dimension);
 					//wxPrintf("padded ref memory = %ld\n", padded_reference.real_memory_allocated);
-					padded_reference.QuickAndDirtyWriteSlice("ref_before_cc.mrc",1);
-					input_image.QuickAndDirtyWriteSlice("image_before_cc.mrc",1);
+
+					// implement phase-only correlation
+
 
 #ifdef MKL
 					// Use the MKL
 					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
 #else
-					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
+
+					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated/2; pixel_counter ++)
 					{
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+					//	padded_reference.complex_values[pixel_counter] = padded_reference.complex_values[pixel_counter] / (abs(padded_reference.complex_values[pixel_counter])+0.000001f); //phase-only
 					}
+
 #endif
-
-
-
-					//padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
 					padded_reference.BackwardFFT();
-					//padded_reference.DividePixelWise(local_std);
-					//for (pixel_counter=0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++)
-					//{
-				//		padded_reference.real_values[pixel_counter] = padded_reference.real_values[pixel_counter] / sqrtf(local_std.real_values[pixel_counter]);
-					//}
-
-//					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-//					exit(0);
+				//	padded_reference.DivideByConstant(sqrt_input_pixels * sqrt_input_pixels); //  phase-only
+				//padded_reference.QuickAndDirtyWriteSlice("cc_phase_no_scaling.mrc",1);
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
@@ -1334,7 +1337,7 @@ bool MatchTemplateApp::DoCalculation()
 					{
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
 						//local_avg.complex_values[pixel_counter] = binary_mask.complex_values[pixel_counter] * input_image.complex_values[pixel_counter];
-						//local_std.complex_values[pixel_counter] = binary_mask.complex_values[pixel_counter] * input_image_squared.complex_values[pixel_counter];
+						//local_std.complex_values[pixel_counter] = binary_mask.complex_values[pixel_counter] * input_image_copyd.complex_values[pixel_counter];
 					}
 #endif
 
@@ -1398,20 +1401,6 @@ bool MatchTemplateApp::DoCalculation()
 //								correlation_pixel_sum[pixel_counter] = variance;
 							}
 
-/*
-							// my version first mip
-							  if (padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter])
-								{
-									max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
-								  best_psi.real_values[pixel_counter] = current_psi;
-									best_theta.real_values[pixel_counter] = global_euler_search.list_of_search_parameters[current_search_position][1];
-									best_phi.real_values[pixel_counter] = global_euler_search.list_of_search_parameters[current_search_position][0];
-									best_defocus.real_values[pixel_counter] = float(defocus_i) * defocus_step;
-									best_pixel_size.real_values[pixel_counter] = float(size_i) * pixel_size_step;
-//									if (size_i != 0) wxPrintf("size_i = %i\n", size_i);
-//									correlation_pixel_sum[pixel_counter] = variance;
-								}
-*/
 							// histogram
 
 							//current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min_scaled) / histogram_step_scaled);
@@ -1463,7 +1452,7 @@ bool MatchTemplateApp::DoCalculation()
 
 					current_correlation_position++;
 					if (is_running_locally == true) my_progress->Update(current_correlation_position);
-					if (current_correlation_position % 100 == 0)
+					if (current_correlation_position % 1000 == 0)
 					{
 						max_intensity_projection.QuickAndDirtyWriteSlice("current_mip.mrc", 1);
 					}

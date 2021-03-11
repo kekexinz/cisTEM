@@ -77,20 +77,21 @@ bool NikoTestApp::DoCalculation()
 	Image template_reconstruction;
 	Image average_density;
 	Image padded_reference;
-
+	Image input_image;
+	Image input_reconstruction;
 	wxString	my_symmetry = "C1";
 	float	angular_step = 10.0f;
 	float in_plane_angular_step = 5.0f;
 	float psi_step;
 	float psi_max = 360.0f;
 	float psi_start = 0.0f;
-	float pixel_size = 1.06f;
+	float pixel_size = 1.0f; // requires user input
 	float high_resolution_limit_search = 3.0f;
 	float particle_radius_angstroms = 0.0f;
 	float current_psi;
 
-	float defocus1 = 10000.0f;
-	float defocus2 = 10000.0f;
+	float defocus1 = 5065.27f;
+	float defocus2 = 4960.71f;
 	float defocus_search_range = 0.0f;
 	float defocus_step = 100.0f;
 	float defocus_i = 0.0f;
@@ -103,7 +104,7 @@ bool NikoTestApp::DoCalculation()
 	float	voltage_kV = 300.0f;
 	float	spherical_aberration_mm = 2.7f;
 	float amplitude_contrast = 0.07f;
-	float defocus_angle = 0.0f;
+	float defocus_angle = 37.70f; //astigmatism angle?
 	float phase_shift = 0.0f;
 
 	long pixel_counter = 0;
@@ -141,9 +142,9 @@ bool NikoTestApp::DoCalculation()
 		last_search_position = global_euler_search.number_of_search_positions - 1;
 	}
 
-	input_search_image_file.OpenFile("147_Mar12_12.21.27_159_0.mrc", false);
+	input_search_image_file.OpenFile("6sct_chainA_D500_P40_5000eA_1A.mrc", false);
 	input_image.ReadSlice(&input_search_image_file, 1);
-	input_reconstruction_file.OpenFile("6q8y_LSU_to_model5_bfactor_85_pix1.06.mrc", false);
+	input_reconstruction_file.OpenFile("6sct_chainA_900_bfactor_85.mrc", false);
 	input_reconstruction.ReadSlices(&input_reconstruction_file, 1, input_reconstruction_file.ReturnNumberOfSlices());
 
 
@@ -152,20 +153,21 @@ bool NikoTestApp::DoCalculation()
 	wxPrintf("template dim z = %i\n", input_reconstruction.logical_z_dimension);
 	current_projection.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
-	padded_reference.Allocate(5832, 4096, true);
+
+	padded_reference.Allocate(4096, 4096, true);
 	padded_reference.SetToConstant(0.0f);
 	template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
-	average_density.Allocate(5832, 4096, true);
+	average_density.Allocate(4096, 4096, true);
 	average_density.SetToConstant(0.0f);
 
-	input_reconstruction.ChangePixelSize(&template_reconstruction, 1.0f, 0.001f, true);
+	input_reconstruction.ChangePixelSize(&template_reconstruction, 1.0f, 0.001f, true); // true is for FFT
 	template_reconstruction.ZeroCentralPixel();
 	template_reconstruction.SwapRealSpaceQuadrants();
 
 	input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
 	input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
-
 	projection_filter.CalculateCTFImage(input_ctf);
+
 	for (current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++)
 	{
 		//loop over each rotation angle
@@ -184,15 +186,6 @@ bool NikoTestApp::DoCalculation()
 			current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 			average_density.AddImage(&padded_reference);
 			total_search_position++;
-
-
-			if (total_search_position == 1)
-			{
-				if (average_density.is_in_real_space) wxPrintf("avg in real space\n");
-				average_density.DivideByConstant(2.0f);
-				average_density.QuickAndDirtyWriteSlice("total.mrc",1);
-				exit(0);
-			}
 
 		}
 	}
