@@ -496,6 +496,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	Image input_image;
 	Image padded_reference;
+	Image padded_reference_output;
 	Image input_reconstruction;
 	Image template_reconstruction;
 	Image current_projection;
@@ -515,6 +516,8 @@ bool MatchTemplateApp::DoCalculation()
 	Image correlation_pixel_sum_of_squares_image;
 
 	Image temp_image;
+
+	wxString cc_output_name;
 
 	input_image.ReadSlice(&input_search_image_file, 1);
 
@@ -597,6 +600,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	}
 	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	padded_reference_output.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -609,6 +613,7 @@ bool MatchTemplateApp::DoCalculation()
 	double *correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
 	padded_reference.SetToConstant(0.0f);
+	padded_reference_output.SetToConstant(0.0f);
 	max_intensity_projection.SetToConstant(-FLT_MAX);
 	best_psi.SetToConstant(0.0f);
 	best_theta.SetToConstant(0.0f);
@@ -893,7 +898,7 @@ bool MatchTemplateApp::DoCalculation()
 
 			// make the projection filter, which will be CTF * whitening filter
 			input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
-//			input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
+//			input_ctf.SetDefocus((defocus1) / pixel_size, (defocus2) / pixel_size, deg_2_rad(defocus_angle));
 			projection_filter.CalculateCTFImage(input_ctf);
 			projection_filter.ApplyCurveFilter(&whitening_filter);
 
@@ -1000,10 +1005,10 @@ bool MatchTemplateApp::DoCalculation()
 				//current_rotation = 0;
 				for (current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step)
 				{
-
-					angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+//					angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+//					angles.Init(309.70, 256.24, 36.13, 0.0, 0.0);
 //					angles.Init(130.0, 30.0, 199.5, 0.0, 0.0);
-
+					angles.Init(0.0,0.0,0.0,0.0,0.0);
 					if (padding != 1.0f)
 					{
 						template_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
@@ -1017,7 +1022,8 @@ bool MatchTemplateApp::DoCalculation()
 						template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
 						current_projection.SwapRealSpaceQuadrants();
 					}
-//					current_projection.QuickAndDirtyWriteSlice("proj.mrc", 1);
+//					current_projection.QuickAndDirtyWriteSlice(wxString::Format("proj_%.2f_%.2f_%.2f.mrc", global_euler_search.list_of_search_parameters[current_search_position][0],global_euler_search.list_of_search_parameters[current_search_position][1],current_psi).ToStdString(),1);
+//					exit(0);
 					//if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_nofilter.mrc", 1);
 
 					current_projection.MultiplyPixelWise(projection_filter);
@@ -1086,8 +1092,14 @@ bool MatchTemplateApp::DoCalculation()
 #endif
 
 					padded_reference.BackwardFFT();
-//					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-//					exit(0);
+
+					padded_reference_output.CopyFrom(&padded_reference);
+					if (is_rotated_by_90)
+					{
+						padded_reference_output.Rotate2DInPlaceBy90Degrees(false);
+					}
+					padded_reference_output.Resize(original_input_image_x, original_input_image_y, 1, padded_reference_output.ReturnAverageOfRealValuesOnEdges());
+					padded_reference_output.QuickAndDirtyWriteSlice(wxString::Format("cc_%.0f_%.2f.mrc", defocus1, float(defocus_i) * defocus_step).ToStdString(),1);
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
@@ -1164,8 +1176,11 @@ bool MatchTemplateApp::DoCalculation()
 						temp_result->SetResult(1, &temp_float);
 						AddJobToResultQueue(temp_result);
 					}
+					break;
 				}
+				break;
 			}
+			wxPrintf("current corr position = %li\n",current_correlation_position);
 		}
 	}
 
@@ -1182,6 +1197,7 @@ bool MatchTemplateApp::DoCalculation()
 	if (is_rotated_by_90)
 	{
 		// swap back all the images prior to re-sizing
+		input_image.BackwardFFT();
 		input_image.Rotate2DInPlaceBy90Degrees(false);
 		max_intensity_projection.Rotate2DInPlaceBy90Degrees(false);
 
