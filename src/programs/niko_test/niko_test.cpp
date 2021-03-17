@@ -26,6 +26,25 @@ void NikoTestApp::DoInteractiveUserInput()
 
 bool NikoTestApp::DoCalculation()
 {
+	// override original
+	// calculates average density from projections
+	MRCFile input_file_3d("XXX", false);
+	Image input_volume;
+	Image current_projection;
+	Image mean_density;
+	input_volume.Allocate(input_file_3d.ReturnXSize(), input_file_3d.ReturnYSize(), input_file_3d.ReturnZSize(), true);
+	mean_density.Allocate(input_file_3d.ReturnXSize(), input_file_3d.ReturnYSize(), true);
+	input_volume.ReadSlices(&input_file_3d, 1, input_file_3d.ReturnZSize());
+	input_volume.ZeroCentralPixel();
+	input_volume.SwapRealSpaceQuadrants();
+
+	for ()
+		angles.Init()
+		input_volume.ExtractSlice(current_projection, angles, 1.0f, false);
+		current_projection.SwapRealSpaceQuadrants();
+		current_projection.MultiplyPixelWise(projection_filter);
+
+	/*
 	int i,j;
 	int count;
 	int padded_dimensions_x;
@@ -121,7 +140,7 @@ bool NikoTestApp::DoCalculation()
 		output_image.WriteSlice(&output_file, 1 + count);
 	}
 	wxPrintf("\nSum of slice peaks = %g\n", sum_of_peaks);
-
+ */
 /*	wxPrintf("\nDoing 1000 FFTs %i x %i\n", output_image.logical_x_dimension, output_image.logical_y_dimension);
 	for (i = 0; i < 1000; i++)
 	{

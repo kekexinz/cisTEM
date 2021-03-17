@@ -709,6 +709,41 @@ bool MatchTemplateApp::DoCalculation()
 	// remove outliers
 	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
 	input_image.ReplaceOutliersWithMean(5.0f);
+
+	/// local normalization using mask
+	Image mask;
+	Image mask_copy;
+	Image local_mean;
+	Image local_std;
+
+	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	mask_copy.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	local_mean.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+
+	mask.SetToConstant(1.0f);
+	float P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	mask_copy.CopyFrom(&mask);
+
+	input_image.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
+	local_mean.QuickAndDirtyWriteSlice("density_mask/local_mean.mrc",1);
+	local_std.SquareRootRealValues();
+	local_std.QuickAndDirtyWriteSlice("density_mask/local_std.mrc",1);
+
+	if (is_rotated_by_90)
+	{
+		local_mean.Rotate2DInPlaceBy90Degrees(false);
+		local_mean.QuickAndDirtyWriteSlice("circular_mask/local_mean_rotated_back.mrc",1);
+		local_std.Rotate2DInPlaceBy90Degrees(false);
+		local_std.QuickAndDirtyWriteSlice("circular_mask/local_std_rotated_back.mrc",1);
+	}
+	exit(0);
+
+	input_image.SubtractImage(&local_mean);
+	input_image.DividePixelWise(local_std);
+	input_image.QuickAndDirtyWriteSlice("density_mask/input_image_normalized.mrc",1);
+	/// local normalization block end
+
 	input_image.ForwardFFT();
 	input_image.SwapRealSpaceQuadrants();
 
@@ -722,8 +757,7 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	//input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
-	//exit(-1);
+	input_image.QuickAndDirtyWriteSlice("density_mask/white.mrc", 1);
 
 	// count total searches (lazy)
 
@@ -1182,6 +1216,7 @@ bool MatchTemplateApp::DoCalculation()
 	if (is_rotated_by_90)
 	{
 		// swap back all the images prior to re-sizing
+		input_image.BackwardFFT();
 		input_image.Rotate2DInPlaceBy90Degrees(false);
 		max_intensity_projection.Rotate2DInPlaceBy90Degrees(false);
 
