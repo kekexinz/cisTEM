@@ -709,6 +709,7 @@ bool MatchTemplateApp::DoCalculation()
 	// remove outliers
 	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
 	input_image.ReplaceOutliersWithMean(5.0f);
+	input_image.QuickAndDirtyWriteSlice("input_image_raw_rotated.mrc",1);
 
 	/// local normalization using mask
 	Image mask;
@@ -723,21 +724,26 @@ bool MatchTemplateApp::DoCalculation()
 
 	mask.SetToConstant(1.0f);
 	float P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	wxPrintf("P=%f\n",P);
+	wxPrintf("sum=%f\n", mask.ReturnSumOfRealValues());
+	mask.QuickAndDirtyWriteSlice("circular_mask.mrc",1);
 	mask_copy.CopyFrom(&mask);
+	 // end of circular mask definition
+
+	/*
+	MRCFile input_mask_file("average_density_LSU.mrc", false);
+	mask.ReadSlice(&input_mask_file, 1);
+	mask.Rotate2DInPlaceBy90Degrees(true);
+	wxPrintf("mask dim: %i %i\n", mask.logical_x_dimension, mask.logical_y_dimension);
+	wxPrintf("input_image dim: %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension);
+	float P = mask.ReturnSumOfRealValues();
+  */ // end of density mask read-in
 
 	input_image.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
 	local_mean.QuickAndDirtyWriteSlice("density_mask/local_mean.mrc",1);
 	local_std.SquareRootRealValues();
 	local_std.QuickAndDirtyWriteSlice("density_mask/local_std.mrc",1);
 
-	if (is_rotated_by_90)
-	{
-		local_mean.Rotate2DInPlaceBy90Degrees(false);
-		local_mean.QuickAndDirtyWriteSlice("circular_mask/local_mean_rotated_back.mrc",1);
-		local_std.Rotate2DInPlaceBy90Degrees(false);
-		local_std.QuickAndDirtyWriteSlice("circular_mask/local_std_rotated_back.mrc",1);
-	}
-	exit(0);
 
 	input_image.SubtractImage(&local_mean);
 	input_image.DividePixelWise(local_std);
