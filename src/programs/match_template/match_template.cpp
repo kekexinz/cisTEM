@@ -709,7 +709,7 @@ bool MatchTemplateApp::DoCalculation()
 	// remove outliers
 	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
 	input_image.ReplaceOutliersWithMean(5.0f);
-	input_image.ForwardFFT();
+	input_image.ForwardFFT(false);
 	input_image.SwapRealSpaceQuadrants();
 
 	input_image.ZeroCentralPixel();
@@ -1068,26 +1068,35 @@ bool MatchTemplateApp::DoCalculation()
 					current_projection.DivideByConstant(sqrtf(variance));
 					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 
-					padded_reference.ForwardFFT();
+					padded_reference.ForwardFFT(false);
 					// Zeroing the central pixel is probably not doing anything useful...
 					padded_reference.ZeroCentralPixel();
 //					padded_reference.DivideByConstant(sqrtf(variance));
 
 					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
 
-#ifdef MKL
+//#ifdef MKL
 					// Use the MKL
-					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
-#else
+//					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+//#else
+					input_image.QuickAndDirtyWriteSlice("phase_corr/img.mrc",1);
+					padded_reference.QuickAndDirtyWriteSlice("phase_corr/ref.mrc",1);
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+						padded_reference.complex_values[pixel_counter] /= abs(padded_reference.complex_values[pixel_counter]);
+						//wxPrintf("real = %f\n", padded_reference.real_values[2*pixel_counter]);
+						//wxPrintf("imag = %f\n\n", padded_reference.real_values[2*pixel_counter+1]);
 					}
-#endif
+//#endif
 
 					padded_reference.BackwardFFT();
-//					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-//					exit(0);
+					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
+					{
+						if(pixel_counter % 1000 == 0) wxPrintf("cc = %f\n", padded_reference.real_values[pixel_counter]);
+					}
+					padded_reference.QuickAndDirtyWriteSlice("phase_corr/cc.mrc", 1);
+					exit(0);
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
@@ -1148,7 +1157,7 @@ bool MatchTemplateApp::DoCalculation()
 						correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
 					}
 
-					//max_intensity_projection.QuickAndDirtyWriteSlice("/tmp/mip.mrc", 1);
+					if (current_correlation_position % 500 == 0) max_intensity_projection.QuickAndDirtyWriteSlice("phase_corr/current_mip.mrc", 1);
 
 					current_projection.is_in_real_space = false;
 					padded_reference.is_in_real_space = true;
