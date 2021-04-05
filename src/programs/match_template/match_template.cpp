@@ -262,7 +262,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 															best_defocus_output_file.ToUTF8().data(),
 															best_pixel_size_output_file.ToUTF8().data(),
 															scaled_mip_output_file.ToUTF8().data(),
-															correlation_std_output_file.ToUTF8().data(),
+															correlation_avg_output_file.ToUTF8().data(),
 															my_symmetry.ToUTF8().data(),
 															in_plane_angular_step,
 															output_histogram_file.ToUTF8().data(),
@@ -270,7 +270,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 															last_search_position,
 															image_number_for_gui,
 															number_of_jobs_per_image_in_gui,
-															correlation_avg_output_file.ToUTF8().data(),
+															correlation_std_output_file.ToUTF8().data(),
 															directory_for_results.ToUTF8().data(),
 															result_filename.ToUTF8().data(),
 															min_peak_radius,
@@ -711,8 +711,20 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ReplaceOutliersWithMean(5.0f);
 	input_image.ForwardFFT(false);
 	input_image.SwapRealSpaceQuadrants();
-
 	input_image.ZeroCentralPixel();
+	//input_image.QuickAndDirtyWriteSlice("img_before_scaling_unscaled.mrc",1);
+	// scale amplitude
+	//wxString    output_amplitude_file = "tmp/amplitude_img_unscaled.txt";
+	//NumericTextFile amplitude_file(output_amplitude_file, OPEN_TO_WRITE, 1);
+	//float amp_array[1];
+	for (pixel_counter = 0; pixel_counter < input_image.real_memory_allocated / 2; pixel_counter ++)
+	{
+		//amp_array[0] = fabs(input_image.complex_values[pixel_counter]);
+		//amplitude_file.WriteLine(amp_array);
+		input_image.complex_values[pixel_counter] /= (fabs(input_image.complex_values[pixel_counter])+0.00012f);
+	}
+	//amplitude_file.Close();
+
 	input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
 	whitening_filter.SquareRoot();
 	whitening_filter.Reciprocal();
@@ -722,8 +734,10 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	//input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
+	input_image.QuickAndDirtyWriteSlice("tmp/white.mrc", 1);
+
 	//exit(-1);
+
 
 	// count total searches (lazy)
 
@@ -1022,6 +1036,20 @@ bool MatchTemplateApp::DoCalculation()
 
 					current_projection.MultiplyPixelWise(projection_filter);
 
+					//current_projection.QuickAndDirtyWriteSlice("tmp/ref_before_scaling.mrc",1);
+					// scale amplitude
+					//wxString    output_amplitude_file = "tmp/amplitude_ref.txt";
+					//NumericTextFile amplitude_file(output_amplitude_file, OPEN_TO_WRITE, 1);
+					//float amp_array[1];
+					//for (pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
+					//{
+						//amp_array[0] = fabs(current_projection.complex_values[pixel_counter]);
+						//amplitude_file.WriteLine(amp_array);
+					//	current_projection.complex_values[pixel_counter] /= (fabs(current_projection.complex_values[pixel_counter])+0.00012f);
+					//}
+					//amplitude_file.Close();
+					//exit(0);
+
 					//if (first_search_position == 0) projection_filter.QuickAndDirtyWriteSlice("/tmp/projection_filter.mrc", 1);
 					//if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_afterfilter.mrc", 1);
 
@@ -1066,37 +1094,35 @@ bool MatchTemplateApp::DoCalculation()
 					variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
 							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
 					current_projection.DivideByConstant(sqrtf(variance));
+					//current_projection.ForwardFFT();
+					//current_projection.QuickAndDirtyWriteSlice("tmp/current_proj.mrc",1);
+					//exit(0);
+					//for (pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
+					//{
+					//	current_projection.complex_values[pixel_counter] /= (fabs(current_projection.complex_values[pixel_counter]));
+						//if (pixel_counter % 2000 == 0) wxPrintf("amp of proj: %f\n", fabs(current_projection.complex_values[pixel_counter]));
+					//}
+					//current_projection.BackwardFFT();
 					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 
-					padded_reference.ForwardFFT(false);
+					padded_reference.ForwardFFT();
 					// Zeroing the central pixel is probably not doing anything useful...
 					padded_reference.ZeroCentralPixel();
 //					padded_reference.DivideByConstant(sqrtf(variance));
 
-					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
-
-//#ifdef MKL
+					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("tmp/proj.mrc", 1);
+#ifdef MKL
 					// Use the MKL
-//					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
-//#else
-					input_image.QuickAndDirtyWriteSlice("phase_corr/img.mrc",1);
-					padded_reference.QuickAndDirtyWriteSlice("phase_corr/ref.mrc",1);
+					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+#else
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
-						padded_reference.complex_values[pixel_counter] /= abs(padded_reference.complex_values[pixel_counter]);
-						//wxPrintf("real = %f\n", padded_reference.real_values[2*pixel_counter]);
-						//wxPrintf("imag = %f\n\n", padded_reference.real_values[2*pixel_counter+1]);
 					}
-//#endif
+#endif
 
 					padded_reference.BackwardFFT();
-					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
-					{
-						if(pixel_counter % 1000 == 0) wxPrintf("cc = %f\n", padded_reference.real_values[pixel_counter]);
-					}
-					padded_reference.QuickAndDirtyWriteSlice("phase_corr/cc.mrc", 1);
-					exit(0);
+
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
@@ -1157,7 +1183,7 @@ bool MatchTemplateApp::DoCalculation()
 						correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
 					}
 
-					if (current_correlation_position % 500 == 0) max_intensity_projection.QuickAndDirtyWriteSlice("phase_corr/current_mip.mrc", 1);
+					if (current_correlation_position % 200 == 0) max_intensity_projection.QuickAndDirtyWriteSlice("phase_corr/current_mip.mrc", 1);
 
 					current_projection.is_in_real_space = false;
 					padded_reference.is_in_real_space = true;
@@ -1191,6 +1217,7 @@ bool MatchTemplateApp::DoCalculation()
 	if (is_rotated_by_90)
 	{
 		// swap back all the images prior to re-sizing
+		input_image.BackwardFFT();
 		input_image.Rotate2DInPlaceBy90Degrees(false);
 		max_intensity_projection.Rotate2DInPlaceBy90Degrees(false);
 
