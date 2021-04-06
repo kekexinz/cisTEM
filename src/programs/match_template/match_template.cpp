@@ -596,7 +596,7 @@ bool MatchTemplateApp::DoCalculation()
 	}
 
 	}
-	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	//padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -608,7 +608,7 @@ bool MatchTemplateApp::DoCalculation()
 	double *correlation_pixel_sum = new double[input_image.real_memory_allocated];
 	double *correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
-	padded_reference.SetToConstant(0.0f);
+	//padded_reference.SetToConstant(0.0f);
 	max_intensity_projection.SetToConstant(-FLT_MAX);
 	best_psi.SetToConstant(0.0f);
 	best_theta.SetToConstant(0.0f);
@@ -706,30 +706,36 @@ bool MatchTemplateApp::DoCalculation()
 	wxDateTime my_time_out;
 	wxDateTime my_time_in;
 
-	// remove outliers
-	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
-	input_image.ReplaceOutliersWithMean(5.0f);
-	input_image.QuickAndDirtyWriteSlice("input_image_raw_rotated.mrc",1);
-
 	/// local normalization using mask
-	Image mask;
-	Image mask_copy;
-	Image local_mean;
-	Image local_std;
+	int q1 = input_image.logical_x_dimension;
+	int q2 = current_projection.logical_x_dimension;
+	int r1 = input_image.logical_y_dimension;
+	int r2 = current_projection.logical_y_dimension;
 
+	Image mask;
+	Image padded_image, padded_image_square, padded_reference_square;
+	Image padded_m1,padded_m2,padded_m;
 	mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	mask_copy.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	local_mean.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	padded_image.Allocate(q1+q2-1, r1+r2-1, 1);
+	padded_image.SetToConstant(0.0f);
+	padded_reference.Allocate(q1+q2-1, r1+r2-1, 1);
+	padded_reference.SetToConstant(0.0f);
+	padded_reference_square.Allocate(q1+q2-1, r1+r2-1, 1);
+	padded_reference_square.SetToConstant(0.0f);
+	padded_m.Allocate(q1,r1,1);
+	padded_m.SetToConstant(1.0f);
+	padded_m1.Allocate(q1+q2-1, r1+r2-1, 1);
+	padded_m.ClipIntoLargerRealSpace2D(&padded_m1);
+	padded_m1.QuickAndDirtyWriteSlice("tmp/m1.mrc",1);
+	padded_m2.Allocate(q1+q2-1, r1+r2-1, 1);
 
 	mask.SetToConstant(1.0f);
 	float P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
 	wxPrintf("P=%f\n",P);
 	wxPrintf("sum=%f\n", mask.ReturnSumOfRealValues());
-	mask.QuickAndDirtyWriteSlice("circular_mask.mrc",1);
-	mask_copy.CopyFrom(&mask);
-	 // end of circular mask definition
-
+	//mask.ClipIntoLargerRealSpace2D(&padded_m2);
+	padded_m.ClipIntoLargerRealSpace2D(&padded_m2);
+	padded_m2.QuickAndDirtyWriteSlice("tmp/m2.mrc",1);
 	/*
 	MRCFile input_mask_file("average_density_LSU.mrc", false);
 	mask.ReadSlice(&input_mask_file, 1);
@@ -739,17 +745,9 @@ bool MatchTemplateApp::DoCalculation()
 	float P = mask.ReturnSumOfRealValues();
   */ // end of density mask read-in
 
-	input_image.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
-	local_mean.QuickAndDirtyWriteSlice("density_mask/local_mean.mrc",1);
-	local_std.SquareRootRealValues();
-	local_std.QuickAndDirtyWriteSlice("density_mask/local_std.mrc",1);
-
-
-	input_image.SubtractImage(&local_mean);
-	input_image.DividePixelWise(local_std);
-	input_image.QuickAndDirtyWriteSlice("density_mask/input_image_normalized.mrc",1);
-	/// local normalization block end
-
+	// remove outliers
+	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
+	input_image.ReplaceOutliersWithMean(5.0f);
 	input_image.ForwardFFT();
 	input_image.SwapRealSpaceQuadrants();
 
@@ -763,8 +761,31 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	input_image.QuickAndDirtyWriteSlice("density_mask/white.mrc", 1);
+	//input_image.QuickAndDirtyWriteSlice("tmp/white.mrc", 1);
+	input_image.BackwardFFT();
+	input_image.SwapRealSpaceQuadrants();
+	input_image.ClipIntoLargerRealSpace2D(&padded_image);
+	padded_image_square.CopyFrom(&padded_image);
+	padded_image_square.SquareRealValues();
 
+	padded_image.ForwardFFT();
+	padded_image.SwapRealSpaceQuadrants(); // swapped
+	padded_image.QuickAndDirtyWriteSlice("tmp/padded_image.mrc",1);
+	padded_image_square.ForwardFFT();
+	padded_image_square.SwapRealSpaceQuadrants();
+	padded_image_square.QuickAndDirtyWriteSlice("tmp/padded_image_squared.mrc",1); // swapped
+
+	// define variables for storing equation 21
+	Image termA,termB,termC,termD,termE,termF,termG,termH,termI;
+	termA.Allocate(q1+q2-1, r1+r2-1, 1);
+	termB.Allocate(q1+q2-1, r1+r2-1, 1);
+	termC.Allocate(q1+q2-1, r1+r2-1, 1);
+	termD.Allocate(q1+q2-1, r1+r2-1, 1);
+	termE.Allocate(q1+q2-1, r1+r2-1, 1);
+	termF.Allocate(q1+q2-1, r1+r2-1, 1);
+	termG.Allocate(q1+q2-1, r1+r2-1, 1);
+	termH.Allocate(q1+q2-1, r1+r2-1, 1);
+	termI.Allocate(q1+q2-1, r1+r2-1, 1);
 	// count total searches (lazy)
 
 	total_correlation_positions = 0;
@@ -1055,7 +1076,7 @@ bool MatchTemplateApp::DoCalculation()
 					else
 					{
 						template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
-						current_projection.SwapRealSpaceQuadrants();
+						current_projection.SwapRealSpaceQuadrants(); //swapped back to centered position
 					}
 //					current_projection.QuickAndDirtyWriteSlice("proj.mrc", 1);
 					//if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_nofilter.mrc", 1);
@@ -1107,27 +1128,107 @@ bool MatchTemplateApp::DoCalculation()
 							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
 					current_projection.DivideByConstant(sqrtf(variance));
 					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
-
+					padded_reference.MultiplyPixelWise(padded_m2);
+					padded_reference.QuickAndDirtyWriteSlice("tmp/f2.mrc",1);
+					padded_reference_square.CopyFrom(&padded_reference);
+					padded_reference_square.SquareRealValues();
+					padded_reference_square.QuickAndDirtyWriteSlice("tmp/f2_squared.mrc",1);
+					// references all unswapped
 					padded_reference.ForwardFFT();
+					padded_reference_square.ForwardFFT();
 					// Zeroing the central pixel is probably not doing anything useful...
-					padded_reference.ZeroCentralPixel();
+					//padded_reference.ZeroCentralPixel();
+					//padded_reference_square.ZeroCentralPixel();
 //					padded_reference.DivideByConstant(sqrtf(variance));
 
 					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
 
-#ifdef MKL
+//#ifdef MKL
 					// Use the MKL
-					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
-#else
+//					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+//#else
+					padded_m1.ForwardFFT();
+					padded_m1.SwapRealSpaceQuadrants();
+					padded_m1.QuickAndDirtyWriteSlice("tmp/m1.mrc",1);
+					padded_m2.ForwardFFT();
+					padded_m1.QuickAndDirtyWriteSlice("tmp/m2.mrc",1);
+					termA.ForwardFFT();
+					termB.ForwardFFT();
+					termC.ForwardFFT();
+					termD.ForwardFFT();
+					termE.ForwardFFT();
+					termF.ForwardFFT();
+					//termE.CopyFrom(&padded_reference_square);
+					//termF.CopyFrom(&padded_reference);
+					//termG.ForwardFFT();
+					//termH.ForwardFFT();
+					//termI.ForwardFFT();
+
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
-						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+						termA.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * padded_image.complex_values[pixel_counter];
+						termB.complex_values[pixel_counter] = conj(padded_m2.complex_values[pixel_counter]) * padded_image.complex_values[pixel_counter];
+						termC.complex_values[pixel_counter] = conj(padded_m2.complex_values[pixel_counter]) * padded_m1.complex_values[pixel_counter];
+						termD.complex_values[pixel_counter] = conj(padded_m2.complex_values[pixel_counter]) * padded_image_square.complex_values[pixel_counter];
+						termE.complex_values[pixel_counter] = conj(padded_reference_square.complex_values[pixel_counter]) * padded_m1.complex_values[pixel_counter];
+						termF.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * padded_m1.complex_values[pixel_counter];
 					}
-#endif
+//#endif
+					termA.BackwardFFT();
+					termA.QuickAndDirtyWriteSlice("tmp/termA.mrc",1);
+					termB.BackwardFFT();
+					termB.QuickAndDirtyWriteSlice("tmp/termB.mrc",1);
+					termC.BackwardFFT();
+					termC.QuickAndDirtyWriteSlice("tmp/termC.mrc",1);
+					termD.BackwardFFT();
+					termD.QuickAndDirtyWriteSlice("tmp/termD.mrc",1);
+					termE.BackwardFFT();
+					termE.QuickAndDirtyWriteSlice("tmp/termE.mrc",1);
+					termF.BackwardFFT();
+					termF.QuickAndDirtyWriteSlice("tmp/termF.mrc",1);
 
-					padded_reference.BackwardFFT();
-//					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-//					exit(0);
+					Image NCC_num;
+					Image NCC_den_1;
+					Image NCC_den_2;
+					Image NCC_regular;
+					NCC_num.Allocate(q1+q2-1,r1+r2-1,1);
+					NCC_den_1.Allocate(q1+q2-1,r1+r2-1,1);
+					NCC_den_2.Allocate(q1+q2-1,r1+r2-1,1);
+					NCC_regular.Allocate(q1+q2-1,r1+r2-1,1);
+
+					NCC_num.SetToConstant(0.0f);
+					NCC_num.AddImage(&termA);
+					termG.CopyFrom(&termB);
+					termG.MultiplyPixelWise(termF);
+					termG.DividePixelWise(termC);
+					NCC_num.SubtractImage(&termG);
+					NCC_num.QuickAndDirtyWriteSlice("tmp/NCC_num.mrc",1);
+
+
+					termH.CopyFrom(&termB);
+					termH.SquareRealValues();
+					termH.DividePixelWise(termC);
+					NCC_den_1.SetToConstant(0.0f);
+					NCC_den_1.AddImage(&termD);
+					NCC_den_1.SubtractImage(&termH);
+					NCC_den_1.SquareRootRealValues();
+					NCC_den_1.QuickAndDirtyWriteSlice("tmp/NCC_den_1.mrc",1);
+
+					termI.CopyFrom(&termF);
+					termI.SquareRealValues();
+					termI.DividePixelWise(termC);
+					NCC_den_2.SetToConstant(0.0f);
+					NCC_den_2.AddImage(&termE);
+					NCC_den_2.SubtractImage(&termI);
+					NCC_den_2.SquareRootRealValues();
+					NCC_den_2.QuickAndDirtyWriteSlice("tmp/NCC_den_2.mrc",1);
+
+					NCC_regular.SetToConstant(0.0f);
+					NCC_regular.CopyFrom(&NCC_num);
+					NCC_regular.DividePixelWise(NCC_den_1);
+					NCC_regular.DividePixelWise(NCC_den_2);
+					NCC_regular.QuickAndDirtyWriteSlice("tmp/standard_FFT_ncc.mrc", 1);
+					exit(0);
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
 //					{
