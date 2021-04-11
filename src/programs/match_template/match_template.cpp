@@ -516,6 +516,8 @@ bool MatchTemplateApp::DoCalculation()
 
 	Image temp_image;
 
+	Image cc;
+
 	input_image.ReadSlice(&input_search_image_file, 1);
 
 	// Resize input image to be factorizable by small numbers
@@ -597,6 +599,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	}
 	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	cc.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -717,12 +720,12 @@ bool MatchTemplateApp::DoCalculation()
 	//wxString    output_amplitude_file = "tmp/amplitude_img_unscaled.txt";
 	//NumericTextFile amplitude_file(output_amplitude_file, OPEN_TO_WRITE, 1);
 	//float amp_array[1];
-	for (pixel_counter = 0; pixel_counter < input_image.real_memory_allocated / 2; pixel_counter ++)
-	{
+	//for (pixel_counter = 0; pixel_counter < input_image.real_memory_allocated / 2; pixel_counter ++)
+	//{
 		//amp_array[0] = fabs(input_image.complex_values[pixel_counter]);
 		//amplitude_file.WriteLine(amp_array);
-		input_image.complex_values[pixel_counter] /= (fabs(input_image.complex_values[pixel_counter])+0.00012f);
-	}
+	//	input_image.complex_values[pixel_counter] /= (fabs(input_image.complex_values[pixel_counter])+0.00012f);
+	//}
 	//amplitude_file.Close();
 
 	input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
@@ -1006,7 +1009,7 @@ bool MatchTemplateApp::DoCalculation()
 
 #endif
 			}
-
+			int angular_counter = 0;
 			for (current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++)
 			{
 				//loop over each rotation angle
@@ -1111,17 +1114,23 @@ bool MatchTemplateApp::DoCalculation()
 //					padded_reference.DivideByConstant(sqrtf(variance));
 
 					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("tmp/proj.mrc", 1);
-#ifdef MKL
+//#ifdef MKL
 					// Use the MKL
-					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
-#else
+//					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+//#else
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
+						padded_reference.complex_values[pixel_counter] /= (fabs(padded_reference.complex_values[pixel_counter])+0.000001f);
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
 					}
-#endif
+//#endif
 
 					padded_reference.BackwardFFT();
+					//cc.CopyFrom(&padded_reference);
+					//cc.Rotate2DInPlaceBy90Degrees(false);
+					//cc.Resize(original_input_image_x, original_input_image_y, 1, cc.ReturnAverageOfRealValuesOnEdges());
+					//cc.QuickAndDirtyWriteSlice(wxString::Format("tmp/cc_%i.mrc", angular_counter).ToStdString(),1);
+					//angular_counter++;
 
 
 //					for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
@@ -1183,7 +1192,14 @@ bool MatchTemplateApp::DoCalculation()
 						correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
 					}
 
-					if (current_correlation_position % 200 == 0) max_intensity_projection.QuickAndDirtyWriteSlice("phase_corr/current_mip.mrc", 1);
+					if (current_correlation_position % 1000 == 0)
+					{
+						//cc.CopyFrom(&max_intensity_projection);
+						//cc.Rotate2DInPlaceBy90Degrees(false);
+						//cc.Resize(original_input_image_x, original_input_image_y, 1, cc.ReturnAverageOfRealValuesOnEdges());
+						//cc.QuickAndDirtyWriteSlice("tmp/current_mip.mrc",1);
+						max_intensity_projection.QuickAndDirtyWriteSlice("tmp/current_mip.mrc",1);
+					}
 
 					current_projection.is_in_real_space = false;
 					padded_reference.is_in_real_space = true;

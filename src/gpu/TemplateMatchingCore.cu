@@ -9,12 +9,12 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
 
 
 
-TemplateMatchingCore::TemplateMatchingCore() 
+TemplateMatchingCore::TemplateMatchingCore()
 {
 
 };
 
-TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs) 
+TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 {
 
   Init(number_of_jobs);
@@ -24,7 +24,7 @@ TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 
 
 
-TemplateMatchingCore::~TemplateMatchingCore() 
+TemplateMatchingCore::~TemplateMatchingCore()
 {
 
 
@@ -71,7 +71,7 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
                                 ProgressBar *my_progress,
                                 long total_correlation_positions,
                                 bool is_running_locally)
-                                
+
 {
 
 
@@ -124,14 +124,14 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 	this->is_running_locally = is_running_locally;
 
 	this->parent_pointer = parent_pointer;
-    
+
     // For now we are only working on the inner loop, so no need to track best_defocus and best_pixel_size
 
     // At the outset these are all empty cpu images, so don't xfer, just allocate on gpuDev
 
 
 
-    // Transfer the input image_memory_should_not_be_deallocated  
+    // Transfer the input image_memory_should_not_be_deallocated
 
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 
@@ -234,6 +234,12 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 			//      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
 			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
+			for (int pixel_counter = 0; pixel_counter < d_padded_reference.real_memory_allocated / 2; pixel_counter ++)
+			{
+				wxPrintf("real %f\n",d_padded_reference.real_values_gpu[2*pixel_counter]);
+				//d_padded_reference.complex_values_gpu[pixel_counter] = cuCdivf(d_padded_reference.complex_values_gpu[pixel_counter], make_cuFloatComplex(cuCabsf(d_padded_reference.complex_values_gpu[pixel_counter]),0.0f));
+			}
+			//wxPrintf("abs: %f\n", cuCabsf(d_padded_reference.complex_values_gpu[0]));
 
 //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
 //			d_padded_reference.ConvertToHalfPrecision(false);
@@ -339,7 +345,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			}
 			} // loop over psi angles
 
-      
+
  	} // end of outer loop euler sphere position
 
 
@@ -484,6 +490,3 @@ __global__ void AccumulateSumsKernel(__half2* my_stats, const int numel, cufftRe
 
     }
 }
-
-
-
