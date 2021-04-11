@@ -30,6 +30,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	wxString    output_result_image_filename;
 	wxString    output_slab_filename;
 	wxString    xyz_coords_filename;
+	wxString    corr_variance_filename;
+	wxString    corr_mean_filename;
 
 	float wanted_threshold;
 	float min_peak_radius;
@@ -57,6 +59,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 		wanted_threshold = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
 		min_peak_radius = my_input->GetFloatFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 1.0);
 		result_number = my_input->GetIntFromUser("Result number to process", "If input files contain results from several searches, which one should be used?", "1", 1);
+		corr_variance_filename = my_input->GetFilenameFromUser("Input correlation variance file", "The file with the correlation variance image", "corr_variance.mrc", false);
+		corr_mean_filename = my_input->GetFilenameFromUser("Input correlation mean file", "The file with the correlation mean image", "corr_average.mrc", false);
 	}
 	else
 	{
@@ -76,7 +80,7 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(14);
-	my_current_job.ManualSetArguments("ttttttttttfffffbiiii",	input_reconstruction_filename.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttttttttttttfffffbiiii",	input_reconstruction_filename.ToUTF8().data(),
 													input_mip_filename.ToUTF8().data(),
 													input_best_psi_filename.ToUTF8().data(),
 													input_best_theta_filename.ToUTF8().data(),
@@ -86,6 +90,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 													output_result_image_filename.ToUTF8().data(),
 													output_slab_filename.ToUTF8().data(),
 													xyz_coords_filename.ToUTF8().data(),
+													corr_variance_filename.ToUTF8().data(),
+													corr_mean_filename.ToUTF8().data(),
 													wanted_threshold,
 													min_peak_radius,
 													slab_thickness,
@@ -113,16 +119,18 @@ bool MakeTemplateResult::DoCalculation()
 	wxString	output_result_image_filename = my_current_job.arguments[7].ReturnStringArgument();
 	wxString	output_slab_filename = my_current_job.arguments[8].ReturnStringArgument();
 	wxString	xyz_coords_filename = my_current_job.arguments[9].ReturnStringArgument();
-	float		wanted_threshold = my_current_job.arguments[10].ReturnFloatArgument();
-	float		min_peak_radius = my_current_job.arguments[11].ReturnFloatArgument();
-	float		slab_thickness = my_current_job.arguments[12].ReturnFloatArgument();
-	float		pixel_size = my_current_job.arguments[13].ReturnFloatArgument();
-	float		binning_factor = my_current_job.arguments[14].ReturnFloatArgument();
-	bool	 	read_coordinates = my_current_job.arguments[15].ReturnBoolArgument();
-	int 		mip_x_dimension = my_current_job.arguments[16].ReturnIntegerArgument();
-	int 		mip_y_dimension = my_current_job.arguments[17].ReturnIntegerArgument();
-	int 		result_number = my_current_job.arguments[18].ReturnIntegerArgument();
-	int 		ignore_N_pixels_from_the_border = my_current_job.arguments[19].ReturnIntegerArgument();
+	wxString	corr_variance_filename = my_current_job.arguments[10].ReturnStringArgument();
+	wxString	corr_mean_filename = my_current_job.arguments[11].ReturnStringArgument();
+	float		wanted_threshold = my_current_job.arguments[12].ReturnFloatArgument();
+	float		min_peak_radius = my_current_job.arguments[13].ReturnFloatArgument();
+	float		slab_thickness = my_current_job.arguments[14].ReturnFloatArgument();
+	float		pixel_size = my_current_job.arguments[15].ReturnFloatArgument();
+	float		binning_factor = my_current_job.arguments[16].ReturnFloatArgument();
+	bool	 	read_coordinates = my_current_job.arguments[17].ReturnBoolArgument();
+	int 		mip_x_dimension = my_current_job.arguments[18].ReturnIntegerArgument();
+	int 		mip_y_dimension = my_current_job.arguments[19].ReturnIntegerArgument();
+	int 		result_number = my_current_job.arguments[20].ReturnIntegerArgument();
+	int 		ignore_N_pixels_from_the_border = my_current_job.arguments[21].ReturnIntegerArgument();
 
 	float padding = 2.0f;
 
@@ -144,6 +152,9 @@ bool MakeTemplateResult::DoCalculation()
 	Image current_projection;
 	Image padded_projection;
 	Image slab;
+	Image corr_variance_image;
+	Image corr_mean_image;
+
 
 	Peak current_peak;
 
@@ -154,6 +165,8 @@ bool MakeTemplateResult::DoCalculation()
 	float current_psi;
 	float current_defocus;
 	float current_pixel_size;
+	float current_corr_variance;
+	float current_corr_mean;
 
 	int number_of_peaks_found = 0;
 	int slab_thickness_in_pixels;
@@ -165,13 +178,13 @@ bool MakeTemplateResult::DoCalculation()
 	long text_file_access_type;
 	int i,j;
 
-	float coordinates[8];
+	float coordinates[10];
 	if (read_coordinates) text_file_access_type = OPEN_TO_READ;
 	else text_file_access_type = OPEN_TO_WRITE;
-	NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 8);
+	NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 10);
 	if (! read_coordinates)
 	{
-		coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           Peak");
+		coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           Peak       Var      Mean");
 
 		mip_image.QuickAndDirtyReadSlice(input_mip_filename.ToStdString(), result_number);
 		psi_image.QuickAndDirtyReadSlice(input_best_psi_filename.ToStdString(), result_number);
@@ -179,6 +192,8 @@ bool MakeTemplateResult::DoCalculation()
 		phi_image.QuickAndDirtyReadSlice(input_best_phi_filename.ToStdString(), result_number);
 		defocus_image.QuickAndDirtyReadSlice(input_best_defocus_filename.ToStdString(), result_number);
 		pixel_size_image.QuickAndDirtyReadSlice(input_best_pixel_size_filename.ToStdString(), result_number);
+		corr_variance_image.QuickAndDirtyReadSlice(corr_variance_filename.ToStdString(), result_number);
+		corr_mean_image.QuickAndDirtyReadSlice(corr_mean_filename.ToStdString(), result_number);
 		mip_x_dimension = mip_image.logical_x_dimension;
 		mip_y_dimension = mip_image.logical_y_dimension;
 
@@ -284,6 +299,8 @@ bool MakeTemplateResult::DoCalculation()
 						current_psi = psi_image.real_values[address];
 						current_defocus = defocus_image.real_values[address];
 						current_pixel_size = pixel_size_image.real_values[address];
+						current_corr_variance = corr_variance_image.real_values[address];
+						current_corr_mean = corr_mean_image.real_values[address];
 					}
 
 					address++;
@@ -300,6 +317,8 @@ bool MakeTemplateResult::DoCalculation()
 			coordinates[5] = current_defocus;
 			coordinates[6] = current_pixel_size;
 			coordinates[7] = current_peak.value;
+			coordinates[8] = current_corr_variance;
+			coordinates[9] = current_corr_mean;
 			coordinate_file.WriteLine(coordinates);
 		}
 		else
@@ -316,7 +335,7 @@ bool MakeTemplateResult::DoCalculation()
 			current_peak.value = coordinates[7];
 		}
 
-		wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
+		wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f, %10.6f, %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value, current_corr_variance, current_corr_mean);
 
 			// ok get a projection
 
@@ -355,7 +374,7 @@ bool MakeTemplateResult::DoCalculation()
 	// save the output image
 
 	output_image.QuickAndDirtyWriteSlice(output_result_image_filename.ToStdString(), 1, true, pixel_size);
-	slab.QuickAndDirtyWriteSlices(output_slab_filename.ToStdString(), 1, slab_thickness_in_pixels, true, binned_pixel_size);
+	//slab.QuickAndDirtyWriteSlices(output_slab_filename.ToStdString(), 1, slab_thickness_in_pixels, true, binned_pixel_size);
 
 	if (is_running_locally == true)
 	{

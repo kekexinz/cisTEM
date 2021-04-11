@@ -81,8 +81,12 @@ bool ExtractParticlesApp::DoCalculation()
 	for ( int counter = 0; counter < number_of_particles; counter ++ )
 	{
 		input_coos_file->ReadLine(temp_array);
-		plt_x = temp_array[0];
-		plt_y = temp_array[1];
+		plt_x = temp_array[3]; // for coordinates file from make_template_result
+		plt_y = temp_array[4];
+		if (counter == 0)
+		{
+			wxPrintf("x=%f y=%f\n", plt_x, plt_y);
+		}
 		/*
 		 * plt_x = (my_y + phys_addr_box_center_y) + 1.0;
 		 * plt_y = (logical_x_dim - (phys_addr_box_center_x + my_x)) + 1.0;
@@ -90,8 +94,9 @@ bool ExtractParticlesApp::DoCalculation()
 		 * my_x = -1 * ((plt_y - 1.0)  - logical_x_dim + phys_addr_box_center_x)
 		 * my_y = (plt_x - 1.0)  - phys_addr_box_center_y;
 		 */
-		my_x = (-1.0) * ((plt_y - 1.0) - micrograph.logical_x_dimension + micrograph.physical_address_of_box_center_x);
-		my_y = (plt_x - 1.0) - micrograph.physical_address_of_box_center_y;
+		//my_x = (-1.0) * ((plt_y - 1.0) - micrograph.logical_x_dimension + micrograph.physical_address_of_box_center_x);
+		//my_y = (plt_x - 1.0) - micrograph.physical_address_of_box_center_y;
+		my_x =
 		micrograph.ClipInto(&box,micrograph_mean,false,1.0,-int(my_x),-int(my_y),0);
 		box.WriteSlice(&output_stack , counter + 1);
 
