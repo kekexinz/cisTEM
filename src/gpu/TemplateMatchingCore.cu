@@ -246,14 +246,14 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			//      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
 			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
       //d_padded_reference.MultiplyByConstant(1.0f/(d_padded_reference.ft_normalization_factor*d_padded_reference.ft_normalization_factor));
-      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc.mrc",1,1);
+      d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc1.mrc",1,1);
 
       // scale both ref and image
       d_padded_reference.ForwardFFT(false); // d_padded_reference.ForwardFFT();
       //d_current_projection.MultiplyPixelWiseComplexConjugate(d_test_image);
       d_padded_reference.ComputeAmplitudeSpectrumFull2D();
       d_padded_reference.BackwardFFT();
-      d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc.mrc",1,1);
+      d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc2.mrc",1,1);
 
 //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
 //			d_padded_reference.ConvertToHalfPrecision(false);
