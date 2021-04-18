@@ -72,7 +72,7 @@ public:
 	Image template_reconstruction;
 	Image current_projection;
 	Image input_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
-
+	Image test_image;
 
 	cudaGraph_t graph;
 	cudaGraphExec_t graphExec;
@@ -97,6 +97,7 @@ public:
 	// This will need to be copied in
 	GpuImage d_input_image;
 	GpuImage d_current_projection;
+	GpuImage d_test_image;
 	GpuImage d_padded_reference;
 
 
@@ -138,6 +139,7 @@ public:
 	__half2* my_stats;
 	__half2* my_peaks;
 	__half2* my_new_peaks; // for passing euler angles to the callback
+	__half2* my_peak_amplitude; // store amplitude of cc peaks
 	void SumPixelWise(GpuImage &image);
     void MipPixelWise( __half psi, __half theta, __half phi);
 	void MipToImage();
@@ -148,6 +150,7 @@ public:
 			Image &template_reconstruction,
 			Image &input_image,
 			Image &current_projection,
+			Image &test_image,
 			float pixel_size_search_range,
 			float pixel_size_step,
 			float pixel_size,

@@ -52,6 +52,8 @@ static __device__ __host__ inline Complex ComplexScale(Complex&, float&);
 static __device__ __host__ inline Complex ComplexMul(Complex, Complex);
 static __device__ __host__ inline Complex ComplexConjMul(Complex, Complex);
 static __device__ __host__ inline Complex ComplexConjMulAndScale(Complex a, Complex b, float s);
+static __device__ __host__ inline Complex ScaleComplex(Complex, float);
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,7 +102,15 @@ static __device__ __host__ inline Complex ComplexConjMulAndScale(Complex a, Comp
     Complex c;
     c.x = s * (a.x * b.x + a.y * b.y);
     c.y = s * (a.y * b.x - a.x * b.y) ;
+
     return c;
 }
 
+static __device__ __host__ inline Complex ScaleComplex(Complex a, float s)
+{
+  Complex c;
+  c.x = s * a.x;
+  c.y = s * a.y;
+  return c;
+}
 #endif /* GPU_CORE_HEADERS_H_ */

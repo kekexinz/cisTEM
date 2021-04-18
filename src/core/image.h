@@ -403,7 +403,7 @@ public:
 	void ZeroCentralPixel();
 	void CalculateCrossCorrelationImageWith(Image *other_image);
 	void SwapRealSpaceQuadrants();
-	void ComputeAmplitudeSpectrumFull2D(Image *other_image, bool calculate_phases = false, float phase_multiplier = 1.0f);
+	void ComputeAmplitudeSpectrumFull2D(Image *other_image, bool calculate_phases = false, float phase_multiplier = 1.0f, bool normalize_original_image_with_amplitude = false);
 	void ComputeFilteredAmplitudeSpectrumFull2D(Image* average_spectrum_masked, Image* current_power_spectrum, float& average, float& sigma, float minimum_resolution, float maximum_resolution, float pixel_size_for_fitting);
 	void ComputeAmplitudeSpectrum(Image *other_image, bool signed_values = false);
 	void ComputeHistogramOfRealValuesCurve(Curve *histogram_curve);

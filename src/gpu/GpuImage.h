@@ -53,7 +53,7 @@ public:
 
 	float 	 	 *real_values;									// !<  Real array to hold values for REAL images.
 	std::complex<float> *complex_values;								// !<  Complex array to hold values for COMP images.
-	bool         is_in_memory;                                  // !<  Whether image values are in-memory, in other words whether the image has memory space allocated to its data array. 
+	bool         is_in_memory;                                  // !<  Whether image values are in-memory, in other words whether the image has memory space allocated to its data array.
 	bool         image_memory_should_not_be_deallocated;	    // !< Don't deallocate the memory, generally should only be used when doing something funky with the pointers
 	int          gpu_plan_id;
 
@@ -97,7 +97,7 @@ public:
 	float* tmpVal;
 	double* tmpValComplex;
 
-  
+
 
  ////////////////////////////////////////////////////////
 
@@ -135,6 +135,7 @@ public:
 
 	void QuickAndDirtyWriteSlices(std::string filename, int first_slice, int last_slice); /**CPU_eq**/
 	void PhaseShift(float wanted_x_shift, float wanted_y_shift, float wanted_z_shift);    /**CPU_eq**/
+	void ComputeAmplitudeSpectrumFull2D();
 	void MultiplyByConstant(float scale_factor);                                          /**CPU_eq**/
 	void Conj(); // FIXME
 	void MultiplyPixelWise(GpuImage &other_image);                                        /**CPU_eq**/
@@ -249,13 +250,13 @@ public:
 	void HistogramEvenBins(); // TODO add me
 	void HistogramDefinedBins(); // TODO add me
 
-  
+
   // TODO
   /*
 
-  Mean, Mean_StdDev 
+  Mean, Mean_StdDev
   */
-  
+
 
   ////////////////////////////////////////////////////////////////////////
   ///// Methods for creating or storing masks used for otherwise slow looping operations
@@ -291,10 +292,10 @@ public:
 
 
 
-  
+
   GpuImage* mask_CSOS;   bool is_allocated_mask_CSOS;
   float ReturnSumSquareModulusComplexValues();
-  
+
   // Callback related parameters
   bool is_set_convertInputf16Tof32;
   bool is_set_scaleFFTAndStore;

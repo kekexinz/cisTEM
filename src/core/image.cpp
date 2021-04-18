@@ -4205,7 +4205,7 @@ float Image::CosineMask(float wanted_mask_radius, float wanted_mask_edge, bool i
 			}
 		}
 	}
-	
+
 	return float(mask_volume);
 }
 
@@ -5281,7 +5281,7 @@ bool Image::IsBinary()
 bool Image::HasNan()
 {
 	MyDebugAssertTrue(is_in_memory, "Memory not allocated");
-	if (is_in_real_space == true) 
+	if (is_in_real_space == true)
 	{
 		long pixel_counter = 0;
 		for ( int k = 0; k < logical_z_dimension; k ++ )
@@ -5303,7 +5303,7 @@ bool Image::HasNan()
 	{
 		for (long pixel_counter = 0; pixel_counter < real_memory_allocated/2 ; pixel_counter ++)
 		{
-			if (std::isnan(abs(complex_values[pixel_counter]))) return true; 
+			if (std::isnan(abs(complex_values[pixel_counter]))) return true;
 		}
 	}
 	return false;
@@ -6639,10 +6639,10 @@ float Image::GetCorrelationWithCTF(CTF ctf)
 			{
 				i_logi = float(i-physical_address_of_box_center_x)*inverse_logical_x_dimension;
 				i_logi_sq = powf(i_logi,2);
-				
+
 				// Where are we?
 				current_spatial_frequency_squared = j_logi_sq + i_logi_sq;
-				
+
 				if (current_spatial_frequency_squared > lowest_freq && current_spatial_frequency_squared < highest_freq)
 				{
 					current_azimuth = atan2f(j_logi,i_logi);
@@ -6654,7 +6654,7 @@ float Image::GetCorrelationWithCTF(CTF ctf)
 					norm_ctf      += pow(current_ctf_value,2);
 
 				} // end of test whether within min,max frequency range
-									
+
 			}
 		}
 	}
@@ -6690,7 +6690,7 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 	const float		inverse_logical_x_dimension = 1.0 / float(logical_x_dimension);
 	const float		inverse_logical_y_dimension = 1.0 / float(logical_y_dimension);
 	float			current_spatial_frequency_squared;
-	
+
 	const float		lowest_freq = powf(ctf.GetLowestFrequencyForFitting(),2);
 	const float		highest_freq = powf(ctf.GetHighestFrequencyForFitting(),2);
 	int				address = 0;
@@ -6701,7 +6701,7 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 	number_of_values = 0;
 	norm_image = 0;
 	image_mean = 0.;
-		
+
 	// Loop over half of the image (ignore Friedel mates)
 	for (j=0;j<logical_y_dimension;j++)
 	{
@@ -6714,10 +6714,10 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 			{
 				i_logi = float(i-physical_address_of_box_center_x)*inverse_logical_x_dimension;
 				i_logi_sq = powf(i_logi,2);
-					
+
 				// Where are we?
 				current_spatial_frequency_squared = j_logi_sq + i_logi_sq;
-					
+
 				if (current_spatial_frequency_squared > lowest_freq && current_spatial_frequency_squared < highest_freq)
 				{
 					current_azimuth = atan2f(j_logi,i_logi);
@@ -6730,13 +6730,13 @@ void Image::SetupQuickCorrelationWithCTF(CTF ctf, int &number_of_values, double 
 					}
 					number_of_values++;
 				} // end of test whether within min,max frequency range
-					
+
 			}
 		}
 	}
 
 	// Now get sum of squared deviations from mean, more accurate than using raw cross-products
-	if (addresses) 
+	if (addresses)
 	{
 		image_mean = image_sum / number_of_values;
 		for (i = 0; i < number_of_values; i++)
@@ -7566,7 +7566,7 @@ void Image::ComputeAmplitudeSpectrum(Image *amplitude_spectrum, bool signed_valu
 
 //BEGIN_FOR_STAND_ALONE_CTFFIND
 
-void Image::ComputeAmplitudeSpectrumFull2D(Image *amplitude_spectrum, bool calculate_phases, float phase_multiplier)
+void Image::ComputeAmplitudeSpectrumFull2D(Image *amplitude_spectrum, bool calculate_phases, float phase_multiplier, bool normalize_original_image_with_amplitude)
 {
 	MyDebugAssertTrue(is_in_memory,"Memory not allocated");
 	MyDebugAssertTrue(amplitude_spectrum->is_in_memory, "Other image memory not allocated");
@@ -7593,9 +7593,15 @@ void Image::ComputeAmplitudeSpectrumFull2D(Image *amplitude_spectrum, bool calcu
 		{
 			address_in_self = ReturnFourier1DAddressFromLogicalCoord(ampl_addr_i-amplitude_spectrum->physical_address_of_box_center_x,ampl_addr_j-amplitude_spectrum->physical_address_of_box_center_y,0);
 			amplitude = abs(complex_values[address_in_self]);
+
 			if (! calculate_phases)
 			{
-				amplitude_spectrum->real_values[address_in_amplitude_spectrum] = amplitude;
+				//amplitude_spectrum->real_values[address_in_amplitude_spectrum] = amplitude;
+				if (normalize_original_image_with_amplitude)
+				{
+					if (amplitude != 0.0f) complex_values[address_in_self] = complex_values[address_in_self]/amplitude;
+					else complex_values[address_in_self] = complex_values[address_in_self]/0.000001f;
+				}
 			}
 			else
 			{
@@ -7819,7 +7825,7 @@ void Image::SpectrumBoxConvolution(Image *output_image, int box_size, float mini
 	// Addresses
 	long address_within_output = 0;
 	long address_within_input;
- 
+
 	// Starting and ending x indexes of one or two loops for each line
 	int *x1start = new int[logical_x_dimension];
 	int *x1end = new int[logical_x_dimension];

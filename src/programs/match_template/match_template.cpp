@@ -500,6 +500,8 @@ bool MatchTemplateApp::DoCalculation()
 	Image template_reconstruction;
 	Image current_projection;
 	Image padded_projection;
+	Image test_image;
+	Image amplitude_spectrum;
 
 	Image projection_filter;
 
@@ -652,6 +654,11 @@ bool MatchTemplateApp::DoCalculation()
 	// assume cube
 
 	current_projection.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
+	test_image.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), 1);
+	test_image.SetToConstant(0.0f);
+	amplitude_spectrum.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), 1);
+	amplitude_spectrum.SetToConstant(0.0f);
+
 	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 	template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
 	if (padding != 1.0f) padded_projection.Allocate(input_reconstruction_file.ReturnXSize() * padding, input_reconstruction_file.ReturnXSize() * padding, false);
@@ -880,7 +887,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (max_threads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,test_image,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,
@@ -931,7 +938,6 @@ bool MatchTemplateApp::DoCalculation()
 				GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
 
-
 				#pragma omp critical
 				{
 
@@ -946,7 +952,7 @@ bool MatchTemplateApp::DoCalculation()
 					GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
 					GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
 
-//					mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
+	//				mip_buffer.QuickAndDirtyWriteSlice("phase_corr/tmpMipBuffer.mrc",1,1);
 					// TODO should prob aggregate these across all workers
 				// TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
 					Image sum;
@@ -965,7 +971,6 @@ bool MatchTemplateApp::DoCalculation()
 
 
 					GPU[tIDX].d_max_intensity_projection.Wait();
-
 					// TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
 					pixel_counter = 0;
 					for (current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++)
@@ -996,13 +1001,11 @@ bool MatchTemplateApp::DoCalculation()
 
 
 					GPU[tIDX].histogram.CopyToHostAndAdd(histogram_data);
-
 //					current_correlation_position += GPU[tIDX].total_number_of_cccs_calculated;
 					actual_number_of_ccs_calculated += GPU[tIDX].total_number_of_cccs_calculated;
 
 				} // end of omp critical block
 			} // end of parallel block
-
 
 			continue;
 
@@ -1097,15 +1100,11 @@ bool MatchTemplateApp::DoCalculation()
 					variance = current_projection.ReturnSumOfSquares() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels \
 							- powf(current_projection.ReturnAverageOfRealValues() * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
 					current_projection.DivideByConstant(sqrtf(variance));
-					//current_projection.ForwardFFT();
-					//current_projection.QuickAndDirtyWriteSlice("tmp/current_proj.mrc",1);
-					//exit(0);
-					//for (pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
-					//{
-					//	current_projection.complex_values[pixel_counter] /= (fabs(current_projection.complex_values[pixel_counter]));
-						//if (pixel_counter % 2000 == 0) wxPrintf("amp of proj: %f\n", fabs(current_projection.complex_values[pixel_counter]));
-					//}
-					//current_projection.BackwardFFT();
+					current_projection.QuickAndDirtyWriteSlice("proj_before_normalize.mrc",1);
+					current_projection.ForwardFFT();
+					current_projection.ComputeAmplitudeSpectrumFull2D(&amplitude_spectrum, false, 1.0f, true);
+					current_projection.BackwardFFT();
+					current_projection.QuickAndDirtyWriteSlice("proj_after_normalize.mrc",1);
 					current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 
 					padded_reference.ForwardFFT();
@@ -1120,7 +1119,6 @@ bool MatchTemplateApp::DoCalculation()
 //#else
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
-						padded_reference.complex_values[pixel_counter] /= (fabs(padded_reference.complex_values[pixel_counter])+0.000001f);
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
 					}
 //#endif
@@ -1198,7 +1196,7 @@ bool MatchTemplateApp::DoCalculation()
 						//cc.Rotate2DInPlaceBy90Degrees(false);
 						//cc.Resize(original_input_image_x, original_input_image_y, 1, cc.ReturnAverageOfRealValuesOnEdges());
 						//cc.QuickAndDirtyWriteSlice("tmp/current_mip.mrc",1);
-						max_intensity_projection.QuickAndDirtyWriteSlice("tmp/current_mip.mrc",1);
+						max_intensity_projection.QuickAndDirtyWriteSlice("tmp/current_mip_scale_only_ref.mrc",1);
 					}
 
 					current_projection.is_in_real_space = false;
