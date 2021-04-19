@@ -9,12 +9,12 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
 
 
 
-TemplateMatchingCore::TemplateMatchingCore() 
+TemplateMatchingCore::TemplateMatchingCore()
 {
 
 };
 
-TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs) 
+TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 {
 
   Init(number_of_jobs);
@@ -24,7 +24,7 @@ TemplateMatchingCore::TemplateMatchingCore(int number_of_jobs)
 
 
 
-TemplateMatchingCore::~TemplateMatchingCore() 
+TemplateMatchingCore::~TemplateMatchingCore()
 {
 
 
@@ -71,7 +71,7 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
                                 ProgressBar *my_progress,
                                 long total_correlation_positions,
                                 bool is_running_locally)
-                                
+
 {
 
 
@@ -124,14 +124,14 @@ void TemplateMatchingCore::Init(MyApp *parent_pointer,
 	this->is_running_locally = is_running_locally;
 
 	this->parent_pointer = parent_pointer;
-    
+
     // For now we are only working on the inner loop, so no need to track best_defocus and best_pixel_size
 
     // At the outset these are all empty cpu images, so don't xfer, just allocate on gpuDev
 
 
 
-    // Transfer the input image_memory_should_not_be_deallocated  
+    // Transfer the input image_memory_should_not_be_deallocated
 
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 
@@ -224,16 +224,35 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			average_on_edge *= (d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
 
 			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_on_edge * average_on_edge)));
-			d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
+
+      //d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_before.mrc",1,1);
+      d_current_projection.ForwardFFT(false);
+      d_current_projection.NormalizeAmplitude();
+      d_current_projection.BackwardFFT();
+      //d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_after.mrc",1,1);
+
+      d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
+      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/padded_reference.mrc",1,1);
 			cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
 			// For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
 			// cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
 			// Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
-			d_padded_reference.ForwardFFT(false);
+			d_padded_reference.ForwardFFT();
 
 			//      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
-			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
+			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true); // use ref to debug
+
+      //cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
+      //d_padded_reference.printVal("cc at 0: ", 0);
+      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc_before.mrc",1,1);
+      //d_padded_reference.ForwardFFT();
+      //d_padded_reference.NormalizeAmplitude();
+      //d_padded_reference.BackwardFFT();
+      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc_after.mrc",1,1);
+      //d_padded_reference.printVal("cc at 0: ", 0);
+
+      d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc.mrc",1,1);
 
 //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
 //			d_padded_reference.ConvertToHalfPrecision(false);
@@ -339,7 +358,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 			}
 			} // loop over psi angles
 
-      
+
  	} // end of outer loop euler sphere position
 
 
@@ -357,7 +376,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 	this->MipToImage();
 
-	MyAssertTrue(histogram.is_allocated_histogram, "Trying to accumulate a histogram that has not been initialized!")
+	MyAssertTrue(histogram.is_allocated_histogram, "Trying to accumulate a histogram that has not been initialized!");
 	histogram.Accumulate(d_padded_reference);
 
 	cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
@@ -378,7 +397,6 @@ void TemplateMatchingCore::MipPixelWise( __half psi, __half theta, __half phi)
 
 	// N*
 	d_padded_reference.ReturnLaunchParamtersLimitSMs(5.f,1024);
-
 
 	MipPixelWiseKernel<< <d_padded_reference.gridDims, d_padded_reference.threadsPerBlock,0,cudaStreamPerThread>> >((__half *)d_padded_reference.real_values_16f, my_peaks,(int)d_padded_reference.real_memory_allocated , psi,theta, phi, my_stats, my_new_peaks);
 	checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
@@ -484,6 +502,3 @@ __global__ void AccumulateSumsKernel(__half2* my_stats, const int numel, cufftRe
 
     }
 }
-
-
-

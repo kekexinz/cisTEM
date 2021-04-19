@@ -20,22 +20,22 @@ __global__ void MipPixelWiseKernel(cufftReal* mip, cufftReal *other_image, cufft
                                    int4 dims,float c_psi, float c_phi, float c_theta);
 __global__ void MipPixelWiseKernel(cufftReal* mip, cufftReal *other_image, cufftReal *psi, cufftReal *phi, cufftReal *theta, cufftReal *defocus, cufftReal *pixel, const int4 dims,
                                    float c_psi, float c_phi, float c_theta, float c_defocus, float c_pixel);
+__global__ void NormalizeAmplitudeKernel(cufftComplex* ref_complex_values,int4 dims, int3 physical_upper_bound_complex);
 
 
-
-__global__ void PhaseShiftKernel(cufftComplex* d_input, 
-                                 int4 dims, float3 shifts, 
-                                 int3 physical_address_of_box_center, 
+__global__ void PhaseShiftKernel(cufftComplex* d_input,
+                                 int4 dims, float3 shifts,
+                                 int3 physical_address_of_box_center,
                                  int3 physical_index_of_first_negative_frequency,
                                  int3 physical_upper_bound_complex);
 
 __global__ void ClipIntoRealKernel(cufftReal* real_values_gpu,
                                    cufftReal* other_image_real_values_gpu,
-                                   int4 dims, 
+                                   int4 dims,
                                    int4 other_dims,
-                                   int3 physical_address_of_box_center, 
-                                   int3 other_physical_address_of_box_center, 
-                                   int3 wanted_coordinate_of_box_center, 
+                                   int3 physical_address_of_box_center,
+                                   int3 other_physical_address_of_box_center,
+                                   int3 wanted_coordinate_of_box_center,
                                    float wanted_padding_value);
 
 // cuFFT callbacks
@@ -141,7 +141,7 @@ static __device__ cufftReal CB_realLoadAndClipInto(void* dataIn, size_t offset, 
 
  // Inline declarations
   __device__ __forceinline__ int
-d_ReturnFourierLogicalCoordGivenPhysicalCoord_X(int physical_index, 
+d_ReturnFourierLogicalCoordGivenPhysicalCoord_X(int physical_index,
                                                 int logical_x_dimension,
                                                 int physical_address_of_box_center_x);
 
@@ -191,7 +191,7 @@ ReturnFourierLogicalCoordGivenPhysicalCoord_Z(int physical_index,
 };
 
 ////////////////// For thrust
-typedef struct 
+typedef struct
 {
   __host__ __device__
     float operator()(const float& x) const {
@@ -201,17 +201,17 @@ typedef struct
 ////////////////////////
 
 GpuImage::GpuImage()
-{ 
+{
   SetupInitialValues();
 }
 
 
-GpuImage::GpuImage(Image &cpu_image) 
+GpuImage::GpuImage(Image &cpu_image)
 {
 
   SetupInitialValues();
   Init(cpu_image);
-	
+
 }
 
 GpuImage::GpuImage( const GpuImage &other_gpu_image) // copy constructor
@@ -263,7 +263,7 @@ GpuImage & GpuImage::operator = (const GpuImage *other_gpu_image)
    return *this;
 }
 
-GpuImage::~GpuImage() 
+GpuImage::~GpuImage()
 {
 //  Deallocate();
 }
@@ -321,7 +321,7 @@ void GpuImage::SetupInitialValues()
 
 }
 
-void GpuImage::CopyFromCpuImage(Image &cpu_image) 
+void GpuImage::CopyFromCpuImage(Image &cpu_image)
 {
 
 	UpdateBoolsToDefault();
@@ -403,10 +403,10 @@ void GpuImage::CopyFromCpuImage(Image &cpu_image)
 
 
 	hostImage = &cpu_image;
- 
+
 }
 
-void GpuImage::UpdateCpuFlags() 
+void GpuImage::UpdateCpuFlags()
 {
 
   // Call after re-copying. The main image properites are all assumed to be static.
@@ -585,7 +585,7 @@ void GpuImage::BufferInit(BufferType bt)
           image_buffer = new GpuImage;
           *image_buffer = *this;
           is_allocated_image_buffer = true;
-        }     
+        }
         break;
 
     case b_16f :
@@ -598,14 +598,14 @@ void GpuImage::BufferInit(BufferType bt)
     	break;
 
     case b_sum :
-        if ( ! is_allocated_sum_buffer ) 
+        if ( ! is_allocated_sum_buffer )
         {
           int n_elem;
           nppiSumGetBufferHostSize_32f_C1R_Ctx(npp_ROI, &n_elem,nppStream);
           cudaErr(cudaMalloc(&this->sum_buffer, n_elem));
           is_allocated_sum_buffer = true;
-        }     
-        break;   
+        }
+        break;
 
     case b_min :
         if ( ! is_allocated_min_buffer )
@@ -807,11 +807,11 @@ float GpuImage::ReturnSumSquareModulusComplexValues()
 					{
 						mask_CSOS->complex_values[address] = c2;
 					}
-					else if ((i == 0 || (i == logical_upper_bound_complex.x && x_is_even)) && dims.z != 1) 
+					else if ((i == 0 || (i == logical_upper_bound_complex.x && x_is_even)) && dims.z != 1)
 					{
 						mask_CSOS->complex_values[address] = c1;
 					}
-					else if ((i != 0 && (i != logical_upper_bound_complex.x || ! x_is_even)) || (jj >= 0 && kk >= 0)) 
+					else if ((i != 0 && (i != logical_upper_bound_complex.x || ! x_is_even)) || (jj >= 0 && kk >= 0))
 					{
 						mask_CSOS->complex_values[address] = c3;
 					}
@@ -823,7 +823,7 @@ float GpuImage::ReturnSumSquareModulusComplexValues()
 					address++;
 				}
 			}
-		}   
+		}
 
 
 
@@ -870,7 +870,7 @@ float GpuImage::ReturnSumSquareModulusComplexValues()
 //	return (float)(*dotProd * 2.0f);
 //	return (float)(returnValue * 2.0f);
 
-  
+
 }
 
 
@@ -887,7 +887,7 @@ __global__ void MultiplyPixelWiseComplexConjugateKernel(cufftComplex* ref_comple
 
 	    ref_complex_values[address] = (cufftComplex)ComplexConjMul((Complex)img_complex_values[address],(Complex)ref_complex_values[address]);
     }
-    
+
 
 }
 
@@ -994,6 +994,43 @@ __global__ void MipPixelWiseKernel(cufftReal* mip, cufftReal *correlation_output
     }
 }
 
+void GpuImage::NormalizeAmplitude()
+{
+
+  MyDebugAssertTrue(is_in_memory_gpu,"Memory not allocated");
+	MyDebugAssertFalse(is_in_real_space,"Image in real space");
+  //BufferInit(b_image);
+  ReturnLaunchParamters(dims, false);
+
+  //this->threadsPerBlock = dim3(1024, 1, 1);
+  //this->gridDims = dim3((real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x,1,1);
+	pre_checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
+	 NormalizeAmplitudeKernel<< <this->gridDims, this->threadsPerBlock,0,cudaStreamPerThread>> >(this->complex_values_gpu,this->dims,this->physical_upper_bound_complex);
+  checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
+
+}
+
+__global__ void NormalizeAmplitudeKernel(cufftComplex* ref_complex_values,int4 dims, int3 physical_upper_bound_complex)
+{
+	//float amplitude;
+	int3 coords = make_int3(blockIdx.x*blockDim.x + threadIdx.x,
+                          blockIdx.y*blockDim.y + threadIdx.y,
+                          blockIdx.z);
+	if (coords.x < dims.w / 2 && coords.y < dims.y && coords.z < dims.z)
+			{
+				int address = d_ReturnFourier1DAddressFromPhysicalCoord(coords, physical_upper_bound_complex);
+        //float s;
+        //s = 0.0f;
+
+				float amplitude = (float)cuCabsf(ref_complex_values[ address ]);
+				if (amplitude == 0.0f) amplitude = 0.000001f;
+				//d_input[address].x = d_input[address].x / amplitude;
+				//d_input[address].y = d_input[address].y / amplitude;
+				//ref_complex_values[address] = (cufftComplex)ComplexMul((Complex)ref_complex_values[address],(Complex)ref_complex_values[address]);
+        ref_complex_values[address] = (cufftComplex)ScaleComplex((Complex)ref_complex_values[address],(1.0f/amplitude));
+
+			}
+}
 
 void GpuImage::Abs()
 {
@@ -1030,7 +1067,7 @@ void GpuImage::AbsDiff(GpuImage &other_image, GpuImage &output_image)
 
 
   NppInit();
-  
+
   nppErr(nppiAbsDiff_32f_C1R_Ctx((const Npp32f *)real_values_gpu, pitch,
                                      (const Npp32f *)other_image.real_values_gpu, pitch,
                                      (      Npp32f *)output_image.real_values_gpu, pitch, npp_ROI,nppStream));
@@ -1194,7 +1231,7 @@ void GpuImage::SquareRootRealValues()
 void GpuImage::LogarithmRealValues()
 {
   MyAssertTrue(is_in_memory_gpu, "Memory not allocated");
-  
+
   NppInit();
   nppErr(nppiLn_32f_C1IR_Ctx((Npp32f *)real_values_gpu, pitch, npp_ROI,nppStream));
 
@@ -1246,7 +1283,7 @@ void GpuImage::AddImage(GpuImage &other_image)
 	NppInit();
 	nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)other_image.real_values_gpu, pitch, (Npp32f*)real_values_gpu, pitch, npp_ROI, nppStream));
 
-} 
+}
 
 void GpuImage::AddSquaredImage(GpuImage &other_image)
 {
@@ -1256,7 +1293,7 @@ void GpuImage::AddSquaredImage(GpuImage &other_image)
 
 	NppInit();
 	nppErr(nppiAddSquare_32f_C1IR_Ctx((const Npp32f*)other_image.real_values_gpu,  pitch, (Npp32f*)real_values_gpu,  pitch, npp_ROI, nppStream));
-} 
+}
 
 void GpuImage::MultiplyByConstant(float scale_factor)
 {
@@ -1288,7 +1325,7 @@ void GpuImage::Conj()
 
 void GpuImage::Zeros()
 {
- 
+
   MyAssertTrue(is_meta_data_initialized, "Host meta data has not been copied");
 
   if ( ! is_in_memory_gpu )
@@ -1307,7 +1344,7 @@ void GpuImage::Zeros()
 
 void GpuImage::CopyHostToDevice()
 {
- 
+
 	MyAssertTrue(is_in_memory, "Host memory not allocated");
 
 	if ( ! is_in_memory_gpu )
@@ -1327,7 +1364,7 @@ void GpuImage::CopyHostToDevice()
 
 void GpuImage::CopyDeviceToHost(bool free_gpu_memory, bool unpin_host_memory)
 {
- 
+
 	MyAssertTrue(is_in_memory_gpu, "GPU memory not allocated");
 	// TODO other asserts on size etc.
 	pre_checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
@@ -1414,9 +1451,9 @@ void GpuImage::CopyVolumeDeviceToHost(bool free_gpu_memory, bool unpin_host_memo
     is_in_memory = true;
 
     // TODO add asserts etc.
-    if (free_gpu_memory) 
+    if (free_gpu_memory)
     { cudaFree(d_pitchedPtr.ptr) ; } // FIXME what about the other structures
-    if (unpin_host_memory && is_host_memory_pinned) 
+    if (unpin_host_memory && is_host_memory_pinned)
     {
       cudaHostUnregister(real_values);
       is_host_memory_pinned = false;
@@ -1717,18 +1754,18 @@ void GpuImage::PhaseShift(float wanted_x_shift, float wanted_y_shift, float want
   float3 shifts = make_float3(wanted_x_shift, wanted_y_shift, wanted_z_shift);
   // TODO set the TPB and inline function for grid
 
-  
+
   dim3 threadsPerBlock(32, 32, 1);
-  dim3 gridDims((dims.w/2 + threadsPerBlock.x - 1) / threadsPerBlock.x, 
-                (dims.y + threadsPerBlock.y - 1) / threadsPerBlock.y, dims.z); 
+  dim3 gridDims((dims.w/2 + threadsPerBlock.x - 1) / threadsPerBlock.x,
+                (dims.y + threadsPerBlock.y - 1) / threadsPerBlock.y, dims.z);
 
 	pre_checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
-	PhaseShiftKernel<< <gridDims, threadsPerBlock,0,cudaStreamPerThread>> >(complex_values_gpu, 
+	PhaseShiftKernel<< <gridDims, threadsPerBlock,0,cudaStreamPerThread>> >(complex_values_gpu,
                                                         dims, shifts,
                                                         physical_address_of_box_center,
                                                         physical_index_of_first_negative_frequency,
                                                         physical_upper_bound_complex);
-  
+
     checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
 
 	if (need_to_fft == true) BackwardFFT();
@@ -1750,7 +1787,7 @@ d_Return3DPhaseFromIndividualDimensions( float phase_x, float phase_y, float pha
 
 
  __device__ __forceinline__ int
-d_ReturnFourierLogicalCoordGivenPhysicalCoord_X(int physical_index, 
+d_ReturnFourierLogicalCoordGivenPhysicalCoord_X(int physical_index,
                                                 int logical_x_dimension,
                                                 int physical_address_of_box_center_x)
 {
@@ -1814,34 +1851,34 @@ d_ReturnFourier1DAddressFromPhysicalCoord(int3 wanted_dims, int3 physical_upper_
 
 __global__ void ClipIntoRealKernel(cufftReal* real_values_gpu,
                                    cufftReal* other_image_real_values_gpu,
-                                   int4 dims, 
+                                   int4 dims,
                                    int4 other_dims,
-                                   int3 physical_address_of_box_center, 
+                                   int3 physical_address_of_box_center,
                                    int3 other_physical_address_of_box_center,
-                                   int3 wanted_coordinate_of_box_center, 
+                                   int3 wanted_coordinate_of_box_center,
                                    float wanted_padding_value)
 {
   int3 other_coord = make_int3(blockIdx.x*blockDim.x + threadIdx.x,
                                blockIdx.y*blockDim.y + threadIdx.y,
                                blockIdx.z);
 
-  int3 coord = make_int3(0, 0, 0); 
-  
+  int3 coord = make_int3(0, 0, 0);
+
   if (other_coord.x < other_dims.x &&
       other_coord.y < other_dims.y &&
       other_coord.z < other_dims.z)
   {
 
-    coord.z = physical_address_of_box_center.z + wanted_coordinate_of_box_center.z + 
+    coord.z = physical_address_of_box_center.z + wanted_coordinate_of_box_center.z +
               other_coord.z - other_physical_address_of_box_center.z;
 
-    coord.y = physical_address_of_box_center.y + wanted_coordinate_of_box_center.y + 
+    coord.y = physical_address_of_box_center.y + wanted_coordinate_of_box_center.y +
               other_coord.y - other_physical_address_of_box_center.y;
 
-    coord.x = physical_address_of_box_center.x + wanted_coordinate_of_box_center.x + 
+    coord.x = physical_address_of_box_center.x + wanted_coordinate_of_box_center.x +
               other_coord.x - other_physical_address_of_box_center.x;
 
-    if (coord.z < 0 || coord.z >= dims.z || 
+    if (coord.z < 0 || coord.z >= dims.z ||
         coord.y < 0 || coord.y >= dims.y ||
         coord.x < 0 || coord.x >= dims.x)
     {
@@ -1849,7 +1886,7 @@ __global__ void ClipIntoRealKernel(cufftReal* real_values_gpu,
     }
     else
     {
-      other_image_real_values_gpu[ d_ReturnReal1DAddressFromPhysicalCoord(other_coord, other_dims) ] = 
+      other_image_real_values_gpu[ d_ReturnReal1DAddressFromPhysicalCoord(other_coord, other_dims) ] =
                   real_values_gpu[ d_ReturnReal1DAddressFromPhysicalCoord(coord, dims) ];
     }
 
@@ -1912,13 +1949,13 @@ __global__ void ClipIntoMaskKernel(
 
 
 }
-__global__ void PhaseShiftKernel(cufftComplex* d_input, 
-                                 int4 dims, float3 shifts, 
-                                 int3 physical_address_of_box_center, 
+__global__ void PhaseShiftKernel(cufftComplex* d_input,
+                                 int4 dims, float3 shifts,
+                                 int3 physical_address_of_box_center,
                                  int3 physical_index_of_first_negative_frequency,
                                  int3 physical_upper_bound_complex)
 {
-	
+
 // FIXME it probably makes sense so just just a linear grid launch and save the extra indexing
   int3 wanted_dims = make_int3(blockIdx.x*blockDim.x + threadIdx.x,
                                blockIdx.y*blockDim.y + threadIdx.y,
@@ -1928,48 +1965,48 @@ __global__ void PhaseShiftKernel(cufftComplex* d_input,
   float2 angles;
 
 // FIXME This should probably use cuBlas
-  if (wanted_dims.x <= physical_upper_bound_complex.x && 
-      wanted_dims.y <= physical_upper_bound_complex.y && 
+  if (wanted_dims.x <= physical_upper_bound_complex.x &&
+      wanted_dims.y <= physical_upper_bound_complex.y &&
       wanted_dims.z <= physical_upper_bound_complex.z)
   {
-  
-    
+
+
     d_Return3DPhaseFromIndividualDimensions( d_ReturnPhaseFromShift(
-                                              shifts.x, 
+                                              shifts.x,
                                               wanted_dims.x,
-                                              dims.x), 
+                                              dims.x),
                                              d_ReturnPhaseFromShift(
-                                              shifts.y, 
+                                              shifts.y,
                                                 d_ReturnFourierLogicalCoordGivenPhysicalCoord_Y(
                                                   wanted_dims.y,
                                                   dims.y,
-                                                  physical_index_of_first_negative_frequency.y), 
+                                                  physical_index_of_first_negative_frequency.y),
                                               dims.y),
                                              d_ReturnPhaseFromShift(
-                                              shifts.z, 
+                                              shifts.z,
                                               d_ReturnFourierLogicalCoordGivenPhysicalCoord_Z(
                                                 wanted_dims.z,
                                                 dims.z,
-                                                physical_index_of_first_negative_frequency.z), 
+                                                physical_index_of_first_negative_frequency.z),
                                               dims.z),
                                              angles);
-    
+
     int address = d_ReturnFourier1DAddressFromPhysicalCoord(wanted_dims, physical_upper_bound_complex);
     init_vals.x = d_input[ address ].x;
     init_vals.y = d_input[ address ].y;
     d_input[ address ].x = init_vals.x*angles.x - init_vals.y*angles.y;
     d_input[ address ].y = init_vals.x*angles.y + init_vals.y*angles.x;
   }
-  
+
 
 }
 
 
 // If you don't want to clip from the center, you can give wanted_coordinate_of_box_center_{x,y,z}. This will define the pixel in the image at which other_image will be centered. (0,0,0) means center of image. This is a dumbed down version that does not fill with noise.
-void GpuImage::ClipInto(GpuImage *other_image, float wanted_padding_value,                 
+void GpuImage::ClipInto(GpuImage *other_image, float wanted_padding_value,
                         bool fill_with_noise, float wanted_noise_sigma,
-                        int wanted_coordinate_of_box_center_x, 
-                        int wanted_coordinate_of_box_center_y, 
+                        int wanted_coordinate_of_box_center_x,
+                        int wanted_coordinate_of_box_center_y,
                         int wanted_coordinate_of_box_center_z)
 {
 
@@ -1978,8 +2015,8 @@ void GpuImage::ClipInto(GpuImage *other_image, float wanted_padding_value,
 	MyAssertTrue(is_in_real_space, "Clip into is only set up for real space on the gpu currently");
 
 
-  int3 wanted_coordinate_of_box_center = make_int3(wanted_coordinate_of_box_center_x, 
-                                                   wanted_coordinate_of_box_center_y, 
+  int3 wanted_coordinate_of_box_center = make_int3(wanted_coordinate_of_box_center_x,
+                                                   wanted_coordinate_of_box_center_y,
                                                    wanted_coordinate_of_box_center_z);
 
 	other_image->is_in_real_space = is_in_real_space;
@@ -1995,11 +2032,11 @@ void GpuImage::ClipInto(GpuImage *other_image, float wanted_padding_value,
 	pre_checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
     ClipIntoRealKernel<< <gridDims, threadsPerBlock, 0, cudaStreamPerThread>> >(real_values_gpu,
                                                               other_image->real_values_gpu,
-                                                              dims, 
+                                                              dims,
                                                               other_image->dims,
                                                               physical_address_of_box_center,
-                                                              other_image->physical_address_of_box_center, 
-                                                              wanted_coordinate_of_box_center, 
+                                                              other_image->physical_address_of_box_center,
+                                                              wanted_coordinate_of_box_center,
                                                               wanted_padding_value);
     checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
   }
@@ -2076,13 +2113,13 @@ void GpuImage::SetCufftPlan(bool use_half_precision)
     cudaErr(cufftSetStream(cuda_plan_forward, cudaStreamPerThread));
     cudaErr(cufftSetStream(cuda_plan_inverse, cudaStreamPerThread));
 
-    if (dims.z > 1) 
-    { 
+    if (dims.z > 1)
+    {
       rank = 3;
       fftDims = new long long int[rank];
       inembed = new long long int[rank];
       onembed = new long long int[rank];
-  
+
       fftDims[0] = dims.z;
       fftDims[1] = dims.y;
       fftDims[2] = dims.x;
@@ -2095,10 +2132,10 @@ void GpuImage::SetCufftPlan(bool use_half_precision)
       onembed[1] = dims.y;
       onembed[2] = dims.w/2; // Storage dimension (padded)
 
-      
+
     }
-    else if (dims.y > 1) 
-    { 
+    else if (dims.y > 1)
+    {
       wxPrintf("\n\nAllocating a 2d Plan\n\n");
       rank = 2;
       fftDims = new long long int[rank];
@@ -2114,14 +2151,14 @@ void GpuImage::SetCufftPlan(bool use_half_precision)
       onembed[0] = dims.y;
       onembed[1] = dims.w/2;
 
-    }    
-    else 
-    { 
-      rank = 1; 
+    }
+    else
+    {
+      rank = 1;
       fftDims = new long long int[rank];
       inembed = new long long int[rank];
       onembed = new long long int[rank];
-  
+
       fftDims[0] = dims.x;
 
       inembed[0] = dims.w;
@@ -2154,14 +2191,14 @@ void GpuImage::SetCufftPlan(bool use_half_precision)
     				  NULL, NULL, NULL, CUDA_R_32F, iBatch, &cuda_plan_worksize_inverse, CUDA_R_32F));
     }
 
-//    cufftPlanMany(&dims.cuda_plan_forward, rank, fftDims, 
-//                  inembed, iStride, iDist, 
+//    cufftPlanMany(&dims.cuda_plan_forward, rank, fftDims,
+//                  inembed, iStride, iDist,
 //                  onembed, oStride, oDist, CUFFT_R2C, iBatch);
-//    cufftPlanMany(&dims.cuda_plan_inverse, rank, fftDims, 
-//                  onembed, oStride, oDist, 
+//    cufftPlanMany(&dims.cuda_plan_inverse, rank, fftDims,
+//                  onembed, oStride, oDist,
 //                  inembed, iStride, iDist, CUFFT_C2R, iBatch);
 
- 
+
 
     delete [] fftDims;
     delete [] inembed;
@@ -2169,7 +2206,7 @@ void GpuImage::SetCufftPlan(bool use_half_precision)
 
 	is_fft_planned = true;
 
-  }  
+  }
 
 
 
@@ -2482,6 +2519,3 @@ void GpuImage::UpdateLoopingAndAddressing(int wanted_x_size, int wanted_y_size, 
 		logical_upper_bound_real.z    =  (wanted_z_size - 1) / 2;
 	}
 }
-
-
-

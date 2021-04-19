@@ -586,6 +586,7 @@ bool MatchTemplateApp::DoCalculation()
 
 
 	input_image.Resize(factorizable_x, factorizable_y, 1, input_image.ReturnAverageOfRealValuesOnEdges());
+
 	if ( ! is_power_of_two(factorizable_x) && is_power_of_two(factorizable_y) )
 	{
 		// The speedup in the FFT for better factorization is also dependent on the dimension. The full transform (in cufft anyway) is faster if the best dimension is on X.
@@ -793,7 +794,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	// These vars are only needed in the GPU code, but also need to be set out here to compile.
 	bool first_gpu_loop = true;
-	int nThreads = 2;
+	int nThreads = 1;
 	int nGPUs = 1;
 	int nJobs = last_search_position-first_search_position+1;
 	if (use_gpu && max_threads > nJobs)
@@ -1182,6 +1183,7 @@ bool MatchTemplateApp::DoCalculation()
 	if (is_rotated_by_90)
 	{
 		// swap back all the images prior to re-sizing
+		input_image.BackwardFFT();
 		input_image.Rotate2DInPlaceBy90Degrees(false);
 		max_intensity_projection.Rotate2DInPlaceBy90Degrees(false);
 

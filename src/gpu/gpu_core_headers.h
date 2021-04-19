@@ -103,4 +103,11 @@ static __device__ __host__ inline Complex ComplexConjMulAndScale(Complex a, Comp
     return c;
 }
 
+static __device__ __host__ inline Complex ScaleComplex(Complex a, float s)
+{
+  Complex c;
+  c.x = s * a.x;
+  c.y = s * a.y;
+  return c;
+}
 #endif /* GPU_CORE_HEADERS_H_ */
