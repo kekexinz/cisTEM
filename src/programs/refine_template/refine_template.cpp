@@ -26,9 +26,13 @@ Peak TemplateScore(void *scoring_parameters)
 {
 	TemplateComparisonObject *comparison_object = reinterpret_cast < TemplateComparisonObject *> (scoring_parameters);
 	Image current_projection;
+	//Curve whitening_filter_for_template;
+	//Curve number_of_terms_for_template;
 //	Peak box_peak;
 
 	current_projection.Allocate(comparison_object->projection_filter->logical_x_dimension, comparison_object->projection_filter->logical_x_dimension, false);
+//	whitening_filter_for_template.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((current_projection.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+//	number_of_terms_for_template.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((current_projection.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
 	if (comparison_object->input_reconstruction->logical_x_dimension != current_projection.logical_x_dimension)
 	{
 		Image padded_projection;
@@ -51,7 +55,16 @@ Peak TemplateScore(void *scoring_parameters)
 
 //	current_projection.QuickAndDirtyWriteSlice("projections.mrc", comparison_object->slice);
 //	comparison_object->slice++;
-	current_projection.MultiplyPixelWise(*comparison_object->projection_filter);
+/*
+	current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_for_template, &number_of_terms_for_template);
+	whitening_filter_for_template.SquareRoot();
+	whitening_filter_for_template.Reciprocal();
+	whitening_filter_for_template.MultiplyByConstant(1.0f / whitening_filter_for_template.ReturnMaximumValue());
+
+	//whitening_filter_for_template.WriteToFile("refinement/filter.txt");
+	current_projection.ApplyCurveFilter(&whitening_filter_for_template);
+*/
+	current_projection.MultiplyPixelWise(*comparison_object->projection_filter); // do we whiten ref?
 //	current_projection.BackwardFFT();
 //	current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
 //	current_projection.Resize(comparison_object->windowed_particle->logical_x_dimension, comparison_object->windowed_particle->logical_y_dimension, 1, 0.0f);
@@ -539,6 +552,8 @@ bool RefineTemplateApp::DoCalculation()
 	whitening_filter.SquareRoot();
 	whitening_filter.Reciprocal();
 	whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue());
+	whitening_filter.WriteToFile("refinement/whitening_filter.txt");
+
 
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
@@ -558,11 +573,11 @@ bool RefineTemplateApp::DoCalculation()
 	best_scaled_mip.CopyFrom(&scaled_mip_image);
 	current_peak.value = FLT_MAX;
 	wxPrintf("\n");
-	while (current_peak.value >= wanted_threshold)
+	while (current_peak.value >= wanted_threshold) // collect all peaks and store in found_peaks
 	{
 		// look for a peak..
 
-		current_peak = best_scaled_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, 50);
+		current_peak = best_scaled_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, 50); // gives the largest peak in image
 		if (current_peak.value < wanted_threshold) break;
 		found_peaks[number_of_peaks_found] = current_peak;
 
@@ -588,7 +603,7 @@ bool RefineTemplateApp::DoCalculation()
 				// The square centered at the pixel
 				if ( sq_dist_x + sq_dist_y <= min_peak_radius )
 				{
-					best_scaled_mip.real_values[address] = -FLT_MAX;
+					best_scaled_mip.real_values[address] = -FLT_MAX;  // set this mip to a super small peak height so it won't be picked again
 				}
 
 				if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)
@@ -712,7 +727,9 @@ bool RefineTemplateApp::DoCalculation()
 
 		padded_reference.CopyFrom(&input_image);
 		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y);
-		padded_reference.ClipInto(&windowed_particle);
+		padded_reference.ClipInto(&windowed_particle);  // locate particle in image
+		wxPrintf("write extracted particle\n");
+		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i.mrc", peak_number).ToStdString(),1);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size);
 		windowed_particle.ForwardFFT();
 		windowed_particle.SwapRealSpaceQuadrants();
@@ -745,7 +762,7 @@ bool RefineTemplateApp::DoCalculation()
 //					scaled_mip_image_local.real_values[address] = -FLT_MAX;
 //				}
 
-				if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)
+				if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)   // get info of this peak
 				{
 					current_address = address;
 					current_phi = best_phi_local.real_values[address];
