@@ -555,8 +555,8 @@ bool RefineTemplateApp::DoCalculation()
 	whitening_filter.WriteToFile("refinement/whitening_filter.txt");
 
 
-	input_image.ApplyCurveFilter(&whitening_filter);
-	input_image.ZeroCentralPixel();
+	//input_image.ApplyCurveFilter(&whitening_filter);
+	//input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrt(input_image.ReturnSumOfSquares()));
 	input_image.BackwardFFT();
 
@@ -729,7 +729,7 @@ bool RefineTemplateApp::DoCalculation()
 		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y);
 		padded_reference.ClipInto(&windowed_particle);  // locate particle in image
 		wxPrintf("write extracted particle\n");
-		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i.mrc", peak_number).ToStdString(),1);
+		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i_not_whitened.mrc", peak_number).ToStdString(),1);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size);
 		windowed_particle.ForwardFFT();
 		windowed_particle.SwapRealSpaceQuadrants();
