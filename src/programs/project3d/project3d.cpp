@@ -39,6 +39,7 @@ void Project3DApp::DoInteractiveUserInput()
 	bool		apply_shifts;
 	bool		apply_mask;
 	bool		add_noise;
+	bool apply_whitening;
 	int 		max_threads;
 
 	UserInput *my_input = new UserInput("Project3D", 1.0);
@@ -64,6 +65,7 @@ void Project3DApp::DoInteractiveUserInput()
 	apply_shifts = my_input->GetYesNoFromUser("Apply shifts", "Should the particle translations be applied to the output projections?", "No");
 	apply_mask = my_input->GetYesNoFromUser("Apply mask", "Should the particles be masked with the circular mask?", "No");
 	add_noise = my_input->GetYesNoFromUser("Add noise", "Should the Gaussian noise be added?", "No");
+	apply_whitening = my_input->GetYesNoFromUser("Apply whitening", "Should the image be whitened?", "No");
 
 
 #ifdef _OPENMP
@@ -76,13 +78,13 @@ void Project3DApp::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(14);
-	my_current_job.ManualSetArguments("tttiifffftbbbbi",	input_star_filename.ToUTF8().data(),
+	my_current_job.ManualSetArguments("tttiifffftbbbbbi",	input_star_filename.ToUTF8().data(),
 														input_reconstruction.ToUTF8().data(),
 														ouput_projection_stack.ToUTF8().data(),
 														first_particle, last_particle,
 														pixel_size, mask_radius, wanted_SNR, padding,
 														my_symmetry.ToUTF8().data(),
-														apply_CTF, apply_shifts, apply_mask, add_noise, max_threads);
+														apply_CTF, apply_shifts, apply_mask, add_noise, apply_whitening, max_threads);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -110,7 +112,8 @@ bool Project3DApp::DoCalculation()
 	bool	 apply_shifts						= my_current_job.arguments[11].ReturnBoolArgument();
 	bool	 apply_mask							= my_current_job.arguments[12].ReturnBoolArgument();
 	bool	 add_noise							= my_current_job.arguments[13].ReturnBoolArgument();
-	int		 max_threads						= my_current_job.arguments[14].ReturnIntegerArgument();
+	bool 	 apply_whitening				= my_current_job.arguments[14].ReturnBoolArgument();
+	int		 max_threads						= my_current_job.arguments[15].ReturnIntegerArgument();
 
 	Image projection_image;
 	Image final_image;
@@ -194,7 +197,7 @@ bool Project3DApp::DoCalculation()
 	projection_3d.CopyFrom(input_3d.density_map);
 
 	#pragma omp parallel num_threads(max_threads) default(none) shared(global_random_number_generator, input_star_file, first_particle, last_particle, apply_CTF, apply_shifts, \
-			pixel_size, output_file, add_noise, wanted_SNR, apply_mask, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file) \
+			pixel_size, output_file, add_noise, wanted_SNR, apply_mask, apply_whitening, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file) \
 	private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
 	{
 
@@ -205,6 +208,7 @@ bool Project3DApp::DoCalculation()
 	#pragma omp for ordered schedule(static, 1)
 	for (current_image = 0; current_image < lines_to_process.GetCount(); current_image++)
 	{
+		wxPrintf("current image number = %i\n", current_image);
 		input_parameters = input_star_file.ReturnLine(lines_to_process[current_image]);
 		my_parameters.Init(input_parameters.phi, input_parameters.theta, input_parameters.psi, input_parameters.x_shift, input_parameters.y_shift);
 
@@ -213,23 +217,27 @@ bool Project3DApp::DoCalculation()
 		projection_image.complex_values[0] = projection_3d.complex_values[0];
 
 		if (apply_CTF) projection_image.ApplyCTF(my_ctf, false, true);
+		wxPrintf("apply ctf...\n");
 		if (apply_shifts) projection_image.PhaseShift(input_parameters.x_shift / pixel_size, input_parameters.y_shift / pixel_size);
+		if (apply_whitening)
+		{
+			projection_image.Whiten();
+			projection_image.ZeroCentralPixel();
+			projection_image.DivideByConstant(sqrt(projection_image.ReturnSumOfSquares()));
+		}
+
 		projection_image.SwapRealSpaceQuadrants();
 
 		projection_image.BackwardFFT();
 		projection_image.ChangePixelSize(&final_image, pixel_size / input_parameters.pixel_size, 0.001f);
-
 		if (add_noise && wanted_SNR != 0.0)
 		{
 			variance = final_image.ReturnVarianceOfRealValues();
 			final_image.AddGaussianNoise(sqrtf(variance / wanted_SNR), &local_random_generator);
 		}
-
 		if (apply_mask) final_image.CosineMask(mask_radius / input_parameters.pixel_size, 6.0);
-
 		#pragma omp ordered
 		final_image.WriteSlice(&output_file, current_image + 1);
-
 		#pragma omp atomic
 		image_counter++;
 

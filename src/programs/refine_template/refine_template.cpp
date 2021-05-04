@@ -55,15 +55,6 @@ Peak TemplateScore(void *scoring_parameters)
 
 //	current_projection.QuickAndDirtyWriteSlice("projections.mrc", comparison_object->slice);
 //	comparison_object->slice++;
-/*
-	current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_for_template, &number_of_terms_for_template);
-	whitening_filter_for_template.SquareRoot();
-	whitening_filter_for_template.Reciprocal();
-	whitening_filter_for_template.MultiplyByConstant(1.0f / whitening_filter_for_template.ReturnMaximumValue());
-
-	//whitening_filter_for_template.WriteToFile("refinement/filter.txt");
-	current_projection.ApplyCurveFilter(&whitening_filter_for_template);
-*/
 	current_projection.MultiplyPixelWise(*comparison_object->projection_filter); // do we whiten ref?
 //	current_projection.BackwardFFT();
 //	current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
@@ -545,6 +536,7 @@ bool RefineTemplateApp::DoCalculation()
 	// remove outliers
 
 	input_image.ReplaceOutliersWithMean(5.0f);
+
 	input_image.ForwardFFT();
 
 	input_image.ZeroCentralPixel();
@@ -552,11 +544,9 @@ bool RefineTemplateApp::DoCalculation()
 	whitening_filter.SquareRoot();
 	whitening_filter.Reciprocal();
 	whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue());
-	whitening_filter.WriteToFile("refinement/whitening_filter.txt");
 
-
-	//input_image.ApplyCurveFilter(&whitening_filter);
-	//input_image.ZeroCentralPixel();
+	input_image.ApplyCurveFilter(&whitening_filter);
+	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrt(input_image.ReturnSumOfSquares()));
 	input_image.BackwardFFT();
 
@@ -572,15 +562,14 @@ bool RefineTemplateApp::DoCalculation()
 
 	best_scaled_mip.CopyFrom(&scaled_mip_image);
 	current_peak.value = FLT_MAX;
-	wxPrintf("\n");
 	while (current_peak.value >= wanted_threshold) // collect all peaks and store in found_peaks
 	{
 		// look for a peak..
 
 		current_peak = best_scaled_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, 50); // gives the largest peak in image
 		if (current_peak.value < wanted_threshold) break;
+		//if (current_peak.x > 1000 && current_peak.y > 1000) wxPrintf("x=%f y=%f\n", current_peak.x, current_peak.y);
 		found_peaks[number_of_peaks_found] = current_peak;
-
 		// ok we have peak..
 
 		// get angles and mask out the local area so it won't be picked again..
@@ -591,7 +580,7 @@ bool RefineTemplateApp::DoCalculation()
 		current_peak.x = current_peak.x + best_scaled_mip.physical_address_of_box_center_x;
 		current_peak.y = current_peak.y + best_scaled_mip.physical_address_of_box_center_y;
 
-//		wxPrintf("Peak = %f, %f, %f : %f\n", current_peak.x, current_peak.y, current_peak.value);
+		//wxPrintf("Peak = %f, %f, %f : %f\n", current_peak.x, current_peak.y, current_peak.value);
 
 		for ( j = 0; j < best_scaled_mip.logical_y_dimension; j ++ )
 		{
@@ -722,14 +711,13 @@ bool RefineTemplateApp::DoCalculation()
 //		current_peak = scaled_mip_image.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, input_reconstruction_file.ReturnXSize() / 2 + 1);
 //		if (current_peak.value < wanted_threshold) break;
 		current_peak = found_peaks[peak_number];
-
 		// ok we have peak..
 
 		padded_reference.CopyFrom(&input_image);
 		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y);
 		padded_reference.ClipInto(&windowed_particle);  // locate particle in image
 		wxPrintf("write extracted particle\n");
-		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i_not_whitened.mrc", peak_number).ToStdString(),1);
+		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i_whitened.mrc", peak_number).ToStdString(),1);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size);
 		windowed_particle.ForwardFFT();
 		windowed_particle.SwapRealSpaceQuadrants();
