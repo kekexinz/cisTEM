@@ -177,6 +177,7 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 	cudaErr(cudaEventCreateWithFlags(&gpu_work_is_done_Event, cudaEventDisableTiming));
 
 	int ccc_counter = 0;
+  float scale_factor = 100000.0f;
 	int current_search_position;
 	float average_on_edge;
 	float temp_float;
@@ -225,38 +226,31 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 			d_current_projection.MultiplyByConstant(rsqrtf(  d_current_projection.ReturnSumOfSquares() / (float)d_padded_reference.number_of_real_space_pixels - (average_on_edge * average_on_edge)));
 
-      //d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_before.mrc",1,1);
-      d_current_projection.ForwardFFT(false);
+    //  d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_before.mrc",1,1);
+      d_current_projection.ForwardFFT();
       d_current_projection.NormalizeAmplitude();
       d_current_projection.BackwardFFT();
-      //d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_after.mrc",1,1);
+    //  d_current_projection.QuickAndDirtyWriteSlices("tmp/current_proj_after.mrc",1,1);
 
       d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
       //d_padded_reference.QuickAndDirtyWriteSlices("tmp/padded_reference.mrc",1,1);
 			cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
+      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/padded_reference.mrc",1,1);
 			// For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
 			// cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
 			// Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
 			d_padded_reference.ForwardFFT();
-
+      d_padded_reference.MultiplyByConstant(scale_factor);
+			d_padded_reference.ConvertToHalfPrecision(false); //add this; because MultiplyByConstant must be float argument;
 			//      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
 			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true); // use ref to debug
 
-      //cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
-      //d_padded_reference.printVal("cc at 0: ", 0);
-      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc_before.mrc",1,1);
-      //d_padded_reference.ForwardFFT();
-      //d_padded_reference.NormalizeAmplitude();
-      //d_padded_reference.BackwardFFT();
-      //d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc_after.mrc",1,1);
-      //d_padded_reference.printVal("cc at 0: ", 0);
-
-      d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc.mrc",1,1);
 
 //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
-//			d_padded_reference.ConvertToHalfPrecision(false);
 
+
+    //  d_padded_reference.QuickAndDirtyWriteSlices("tmp/cc.mrc",1,1);
 
 
 			if (DO_HISTOGRAM)
@@ -301,7 +295,6 @@ void TemplateMatchingCore::RunInnerLoop(Image &projection_filter, float c_pixel,
 
 			ccc_counter++;
 			total_number_of_cccs_calculated++;
-
 
 			if ( ccc_counter % 10 == 0)
 			{

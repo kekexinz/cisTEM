@@ -1076,15 +1076,18 @@ bool MatchTemplateApp::DoCalculation()
 
 					//if (first_search_position == 0)  padded_reference.QuickAndDirtyWriteSlice("/tmp/proj.mrc", 1);
 
-#ifdef MKL
+//#ifdef MKL
 					// Use the MKL
-					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
-#else
+//					vmcMulByConj(padded_reference.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (input_image.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),reinterpret_cast <MKL_Complex8 *> (padded_reference.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
+//#else
 					for (pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter ++)
 					{
 						padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+						float amplitude = abs(padded_reference.complex_values[pixel_counter]);
+						if (amplitude==0.0f) amplitude = 0.000001f;
+						padded_reference.complex_values[pixel_counter] /= amplitude;
 					}
-#endif
+//#endif
 
 					padded_reference.BackwardFFT();
 //					padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);

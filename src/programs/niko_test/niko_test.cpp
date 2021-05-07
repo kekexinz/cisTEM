@@ -26,6 +26,32 @@ void NikoTestApp::DoInteractiveUserInput()
 
 bool NikoTestApp::DoCalculation()
 {
+
+	// phase correlation test code
+	MRCFile input_file_img("tmp/img.mrc", false);
+	MRCFile input_file_ref("tmp/padded_reference.mrc", false);
+	Image img;
+	Image ref;
+	int pixel_counter;
+
+	img.Allocate(input_file_img.ReturnXSize(), input_file_img.ReturnYSize(), true);
+	ref.Allocate(input_file_ref.ReturnXSize(), input_file_ref.ReturnYSize(), true);
+	img.ReadSlice(&input_file_img, 1);
+	ref.ReadSlice(&input_file_ref, 1);
+
+	img.ForwardFFT();
+	ref.ForwardFFT();
+
+	for (pixel_counter = 0; pixel_counter < ref.real_memory_allocated / 2; pixel_counter ++)
+	{
+		ref.complex_values[pixel_counter] = conj(ref.complex_values[pixel_counter]) * img.complex_values[pixel_counter];
+	}
+
+	ref.BackwardFFT();
+	ref.QuickAndDirtyWriteSlice("tmp/cc_niko_test.mrc",1);
+
+
+	/*
 	int i,j;
 	int count;
 	int padded_dimensions_x;
@@ -121,7 +147,7 @@ bool NikoTestApp::DoCalculation()
 		output_image.WriteSlice(&output_file, 1 + count);
 	}
 	wxPrintf("\nSum of slice peaks = %g\n", sum_of_peaks);
-
+	*/
 /*	wxPrintf("\nDoing 1000 FFTs %i x %i\n", output_image.logical_x_dimension, output_image.logical_y_dimension);
 	for (i = 0; i < 1000; i++)
 	{
