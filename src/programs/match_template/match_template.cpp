@@ -709,7 +709,7 @@ bool MatchTemplateApp::DoCalculation()
 	// remove outliers
 	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
 	input_image.ReplaceOutliersWithMean(5.0f);
-	input_image.QuickAndDirtyWriteSlice("input_image_raw_rotated.mrc",1);
+	input_image.QuickAndDirtyWriteSlice("circular_mask/input_image_raw_rotated.mrc",1);
 
 	/// local normalization using mask
 	Image mask;
@@ -740,14 +740,14 @@ bool MatchTemplateApp::DoCalculation()
   */ // end of density mask read-in
 
 	input_image.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
-	local_mean.QuickAndDirtyWriteSlice("density_mask/local_mean.mrc",1);
+	local_mean.QuickAndDirtyWriteSlice("circular_mask/local_mean.mrc",1);
 	local_std.SquareRootRealValues();
-	local_std.QuickAndDirtyWriteSlice("density_mask/local_std.mrc",1);
+	local_std.QuickAndDirtyWriteSlice("circular_mask/local_std.mrc",1);
 
 
 	input_image.SubtractImage(&local_mean);
 	input_image.DividePixelWise(local_std);
-	input_image.QuickAndDirtyWriteSlice("density_mask/input_image_normalized.mrc",1);
+	input_image.QuickAndDirtyWriteSlice("circular_mask/input_image_normalized.mrc",1);
 	/// local normalization block end
 
 	input_image.ForwardFFT();
@@ -763,7 +763,7 @@ bool MatchTemplateApp::DoCalculation()
 	input_image.ApplyCurveFilter(&whitening_filter);
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	input_image.QuickAndDirtyWriteSlice("density_mask/white.mrc", 1);
+	input_image.QuickAndDirtyWriteSlice("circular_mask/white.mrc", 1);
 
 	// count total searches (lazy)
 
@@ -903,7 +903,7 @@ bool MatchTemplateApp::DoCalculation()
 
 				if (tIDX == (max_threads - 1)) t_last_search_position = maxPos;
 
-				GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+				GPU[tIDX].Init(this, template_reconstruction, input_image, mask_copy,current_projection,
 								pixel_size_search_range, pixel_size_step, pixel_size,
 								defocus_search_range, defocus_step, defocus1, defocus2,
 								psi_max, psi_start, psi_step,

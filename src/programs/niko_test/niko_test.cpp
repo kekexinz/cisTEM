@@ -26,6 +26,24 @@ void NikoTestApp::DoInteractiveUserInput()
 
 bool NikoTestApp::DoCalculation()
 {
+	MRCFile input_img_patch("img.mrc", false);
+	MRCFile input_ref_patch("ref.mrc", false);
+	Image img;
+	Image ref;
+
+	img.Allocate(input_img_patch.ReturnXSize(), input_img_patch.ReturnYSize(), true);
+	ref.Allocate(input_ref_patch.ReturnXSize(), input_ref_patch.ReturnYSize(), true);
+
+	img.ForwardFFT();
+	ref.ForwardFFT();
+
+	for (int pixel_counter = 0; pixel_counter < ref.real_memory_allocated / 2; pixel_counter ++)
+	{
+		ref.complex_values[pixel_counter] = conj(ref.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+	}
+
+	ref.QuickAndDirtyWriteSlice("tmp/cc.mrc",1);
+	/*
 	// override original
 	// calculates average density from projections
 	AnglesAndShifts angles;
@@ -150,7 +168,7 @@ bool NikoTestApp::DoCalculation()
 	average_density.QuickAndDirtyWriteSlice("average_density_LSU.mrc",1);
 
 	wxPrintf("total search positions = %i\n", total_search_position);
-
+	*/
 	/*
 	int i,j;
 	int count;
