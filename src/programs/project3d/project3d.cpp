@@ -139,6 +139,9 @@ bool Project3DApp::DoCalculation()
 	AnglesAndShifts my_parameters;
 	CTF my_ctf;
 
+	Curve whitening_filter;
+	Curve number_of_terms;
+
 	if ((input_file.ReturnXSize() != input_file.ReturnYSize()) || (input_file.ReturnXSize() != input_file.ReturnZSize()))
 	{
 		MyPrintWithDetails("Error: Input reconstruction is not cubic\n");
@@ -197,7 +200,7 @@ bool Project3DApp::DoCalculation()
 	projection_3d.CopyFrom(input_3d.density_map);
 
 	#pragma omp parallel num_threads(max_threads) default(none) shared(global_random_number_generator, input_star_file, first_particle, last_particle, apply_CTF, apply_shifts, \
-			pixel_size, output_file, add_noise, wanted_SNR, apply_mask, apply_whitening, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file) \
+			pixel_size, output_file, add_noise, wanted_SNR, apply_mask, apply_whitening, whitening_filter, number_of_terms, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file) \
 	private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
 	{
 
@@ -221,9 +224,25 @@ bool Project3DApp::DoCalculation()
 		if (apply_shifts) projection_image.PhaseShift(input_parameters.x_shift / pixel_size, input_parameters.y_shift / pixel_size);
 		if (apply_whitening)
 		{
+			
 			projection_image.Whiten();
 			projection_image.ZeroCentralPixel();
 			projection_image.DivideByConstant(sqrt(projection_image.ReturnSumOfSquares()));
+
+			/*
+			whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((projection_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+			number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((projection_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+			projection_image.ZeroCentralPixel();
+			projection_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+			whitening_filter.SquareRoot();
+			whitening_filter.Reciprocal();
+			whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue());
+
+			//whitening_filter.WriteToFile("/tmp/filter.txt");
+			projection_image.ApplyCurveFilter(&whitening_filter);
+			projection_image.ZeroCentralPixel();
+			projection_image.DivideByConstant(sqrtf(projection_image.ReturnSumOfSquares()));
+			*/
 		}
 
 		projection_image.SwapRealSpaceQuadrants();

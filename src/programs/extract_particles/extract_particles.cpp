@@ -103,7 +103,16 @@ bool ExtractParticlesApp::DoCalculation()
 
 		//micrograph.ClipInto(&box,micrograph_mean,false,1.0,-int(my_x),-int(my_y),0);
 		micrograph.ClipInto(&box,micrograph_mean,false,1.0,int(plt_x - micrograph.physical_address_of_box_center_x),int(plt_y - micrograph.physical_address_of_box_center_y),0);
+		// whiten
+		//box.ForwardFFT();
+		//box.SwapRealSpaceQuadrants();
+		//box.ZeroCentralPixel();
+		//box.Whiten();
+		//box.DivideByConstant(sqrt(box.ReturnSumOfSquares()));
+		//box.BackwardFFT();
+
 		box.WriteSlice(&output_stack , counter + 1);
+
 
 		//
 		my_progress_bar->Update(counter+1);
