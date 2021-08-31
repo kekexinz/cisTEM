@@ -217,14 +217,14 @@ bool Project3DApp::DoCalculation()
 
 		my_ctf.Init(input_parameters.microscope_voltage_kv, input_parameters.microscope_spherical_aberration_mm, input_parameters.amplitude_contrast, input_parameters.defocus_1, input_parameters.defocus_2, input_parameters.defocus_angle, 0.0, 0.0, 0.0, pixel_size, input_parameters.phase_shift, -input_parameters.beam_tilt_x / 1000.0f, -input_parameters.beam_tilt_y / 1000.0f, -input_parameters.image_shift_x, -input_parameters.image_shift_y);
 		projection_3d.ExtractSlice(projection_image, my_parameters);
-		//projection_image.complex_values[0] = projection_3d.complex_values[0];
+		projection_image.complex_values[0] = projection_3d.complex_values[0];
 
 		if (apply_CTF) projection_image.ApplyCTF(my_ctf, false, true);
 		wxPrintf("apply ctf...\n");
 		if (apply_shifts) projection_image.PhaseShift(input_parameters.x_shift / pixel_size, input_parameters.y_shift / pixel_size);
 		if (apply_whitening)
 		{
-
+			
 			projection_image.Whiten();
 			projection_image.ZeroCentralPixel();
 			projection_image.DivideByConstant(sqrt(projection_image.ReturnSumOfSquares()));

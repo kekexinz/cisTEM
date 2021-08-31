@@ -26,63 +26,6 @@ void NikoTestApp::DoInteractiveUserInput()
 
 bool NikoTestApp::DoCalculation()
 {
-	int view_number;
-	int defocus;
-	UserInput my_input("NikoTest", 1.00);
-	view_number = my_input.GetIntFromUser("view number", "which view are we looking at", "1");
-	defocus = my_input.GetIntFromUser("defocus", "which defocus are we looking at", "4000");
-
-	MRCFile input_file_3d(wxString::Format("particles_view_%i_%i.mrc", view_number, defocus).ToStdString(), false);
-	Image input_image;
-	int i;
-	float avg_of_background;
-	//Curve power_spectrum;
-	//Curve number_of_terms;
-	input_image.Allocate(input_file_3d.ReturnXSize(), input_file_3d.ReturnYSize(), true);
-
-	//power_spectrum.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-	//number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-  //for (i=1; i<=input_file_3d.ReturnZSize();i++){
-	//	input_image.ReadSlice(&input_file_3d, i);
-	//	input_image.ForwardFFT();
-	//	input_image.Compute1DPowerSpectrumCurve(&power_spectrum, &number_of_terms);
-	//	power_spectrum.SquareRoot();
-	//	power_spectrum.MultiplyByConstant(100000.0f);
-		//power_spectrum.Reciprocal();
-		//power_spectrum.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue());
-
-
-		//power_spectrum.WriteToFile(wxString::Format("power_spectrum_no_ctf_%i.txt", i).ToStdString());}
-
-		for (i=1; i<=input_file_3d.ReturnZSize();i++)
-		{
-			input_image.ReadSlice(&input_file_3d, i);
-			avg_of_background = input_image.ReturnAverageOfRealValues(200,true);
-			wxPrintf("average of background value: %f\n", avg_of_background);
-			input_image.AddConstant(-1*avg_of_background);
-			input_image.QuickAndDirtyWriteSlice(wxString::Format("particles_view_%i_%i_corrected_%i.mrc", view_number, defocus, i).ToStdString(),1);
-		}
-
-
-	/*
-	MRCFile input_file_3d("particles_8000A_isolated.mrc", false);
-	Image input_image;
-	int i;
-	input_image.Allocate(input_file_3d.ReturnXSize(), input_file_3d.ReturnYSize(), true);
-  for (i=1; i<=input_file_3d.ReturnZSize();i++){
-		input_image.ReadSlice(&input_file_3d, i);
-		input_image.ForwardFFT();
-		input_image.SwapRealSpaceQuadrants();
-		input_image.ZeroCentralPixel();
-		input_image.Whiten();
-		input_image.ZeroCentralPixel();
-		input_image.DivideByConstant(sqrt(input_image.ReturnSumOfSquares()));
-		input_image.SwapRealSpaceQuadrants();
-		input_image.BackwardFFT();
-		input_image.QuickAndDirtyWriteSlice(wxString::Format("whitened_image_%i.mrc", i).ToStdString(),1);
-	}
-	*/
-	/*
 	int i,j;
 	int count;
 	int padded_dimensions_x;
@@ -178,7 +121,7 @@ bool NikoTestApp::DoCalculation()
 		output_image.WriteSlice(&output_file, 1 + count);
 	}
 	wxPrintf("\nSum of slice peaks = %g\n", sum_of_peaks);
-*/
+
 /*	wxPrintf("\nDoing 1000 FFTs %i x %i\n", output_image.logical_x_dimension, output_image.logical_y_dimension);
 	for (i = 0; i < 1000; i++)
 	{
