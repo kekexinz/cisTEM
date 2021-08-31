@@ -180,6 +180,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	float 		in_plane_angular_step = 0;
 	bool 		use_gpu_input = false;
 	int			max_threads = 1; // Only used for the GPU code
+	int image_number_in_stack = 1;
 
 	UserInput *my_input = new UserInput("MatchTemplate", 1.00);
 
@@ -220,7 +221,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU","No");
 	max_threads = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-
+	image_number_in_stack = my_input->GetIntFromUser("Image number in the stack", "Image number in the stack", "1", 1);
 
 	int first_search_position = -1;
 	int last_search_position = -1;
@@ -234,7 +235,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	delete my_input;
 
 
-	my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi",	input_search_images.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbii",	input_search_images.ToUTF8().data(),
 															input_reconstruction.ToUTF8().data(),
 															pixel_size,
 															voltage_kV,
@@ -275,7 +276,8 @@ void MatchTemplateApp::DoInteractiveUserInput()
 															result_filename.ToUTF8().data(),
 															min_peak_radius,
 															use_gpu_input,
-															max_threads);
+															max_threads,
+															image_number_in_stack);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -385,6 +387,7 @@ bool MatchTemplateApp::DoCalculation()
 	float		min_peak_radius = my_current_job.arguments[39].ReturnFloatArgument();
 	bool		use_gpu   = my_current_job.arguments[40].ReturnBoolArgument();
 	int			max_threads =  my_current_job.arguments[41].ReturnIntegerArgument();
+	int     image_number_in_stack = my_current_job.arguments[42].ReturnIntegerArgument();
 
 	if (is_running_locally == false) max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
 
@@ -516,7 +519,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	Image temp_image;
 
-	input_image.ReadSlice(&input_search_image_file, 1);
+	input_image.ReadSlice(&input_search_image_file, image_number_in_stack);
 
 	// Resize input image to be factorizable by small numbers
 	original_input_image_x = input_image.logical_x_dimension;

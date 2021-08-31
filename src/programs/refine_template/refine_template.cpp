@@ -141,6 +141,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 
 
 	int			max_threads;
+	int image_number_in_stack = 1;
 
 	UserInput *my_input = new UserInput("RefineTemplate", 1.00);
 
@@ -195,6 +196,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 #else
 	max_threads = 1;
 #endif
+	image_number_in_stack = my_input->GetIntFromUser("Image number in the stack", "Image number in the stack", "1", 1);
 
 	int first_search_position = -1;
 	int last_search_position = -1;
@@ -208,7 +210,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(42);
-	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiitft",	input_search_images.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiiitft",	input_search_images.ToUTF8().data(),
 															input_reconstruction.ToUTF8().data(),
 															pixel_size,
 															voltage_kV,
@@ -258,6 +260,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 															number_of_jobs_per_image_in_gui,
 															result_number,
 															max_threads,
+															image_number_in_stack,
 															directory_for_results.ToUTF8().data(),
 															threshold_for_result_plotting,
 															filename_for_gui_result_image.ToUTF8().data());
@@ -321,9 +324,10 @@ bool RefineTemplateApp::DoCalculation()
 	int 		number_of_jobs_per_image_in_gui = my_current_job.arguments[45].ReturnIntegerArgument();
 	int 		result_number = my_current_job.arguments[46].ReturnIntegerArgument();
 	int 		max_threads = my_current_job.arguments[47].ReturnIntegerArgument();
-	wxString	directory_for_results = my_current_job.arguments[48].ReturnStringArgument();
-	float		threshold_for_result_plotting = my_current_job.arguments[49].ReturnFloatArgument();
-	wxString 	filename_for_gui_result_image = my_current_job.arguments[50].ReturnStringArgument();
+	int     image_number_in_stack = my_current_job.arguments[48].ReturnIntegerArgument();
+	wxString	directory_for_results = my_current_job.arguments[49].ReturnStringArgument();
+	float		threshold_for_result_plotting = my_current_job.arguments[50].ReturnFloatArgument();
+	wxString 	filename_for_gui_result_image = my_current_job.arguments[51].ReturnStringArgument();
 
 	if (is_running_locally == false) max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
 
@@ -470,7 +474,7 @@ bool RefineTemplateApp::DoCalculation()
 	{
 		SendErrorAndCrash("Error: Input files do not contain selected result\n");
 	}
-	input_image.ReadSlice(&input_search_image_file, result_number);
+	input_image.ReadSlice(&input_search_image_file, image_number_in_stack);
 	mip_image.ReadSlice(&mip_input_file, result_number);
 	scaled_mip_image.ReadSlice(&scaled_mip_input_file, result_number);
 	psi_image.ReadSlice(&best_psi_input_file, result_number);
@@ -716,8 +720,8 @@ bool RefineTemplateApp::DoCalculation()
 		padded_reference.CopyFrom(&input_image);
 		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y);
 		padded_reference.ClipInto(&windowed_particle);  // locate particle in image
-		wxPrintf("write extracted particle\n");
-		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i_whitened.mrc", peak_number).ToStdString(),1);
+		//wxPrintf("write extracted particle\n");
+		//windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("refinement/windowed_particle_%i_whitened.mrc", peak_number).ToStdString(),1);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size);
 		windowed_particle.ForwardFFT();
 		windowed_particle.SwapRealSpaceQuadrants();
