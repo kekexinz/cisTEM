@@ -180,6 +180,13 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	float 		in_plane_angular_step = 0;
 	bool 		use_gpu_input = false;
 	int			max_threads = 1; // Only used for the GPU code
+	float   in_plane_angular_step_start = 0.0f;
+	float   in_plane_angular_step_end = 0.0f;
+	float   phi_start = 0.0f;
+	float   phi_max = 0.0f;
+	float   theta_start = 0.0f;
+	float   theta_max = 0.0f;
+	int 		image_index_in_stack = 1;
 
 	UserInput *my_input = new UserInput("MatchTemplate", 1.00);
 
@@ -220,7 +227,13 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU","No");
 	max_threads = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-
+	in_plane_angular_step_start = my_input->GetFloatFromUser("In plane angular step start position", "Angular step size for global grid search", "0.0", 0.0);
+	in_plane_angular_step_end = my_input->GetFloatFromUser("In plane angular step end position", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+	phi_start = my_input->GetFloatFromUser("angular phi step start position", "Angular step size for global grid search", "0.0", 0.0);
+	phi_max = my_input->GetFloatFromUser("angular phi step end position", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+	theta_start = my_input->GetFloatFromUser("angular theta step start position", "Angular step size for global grid search", "0.0", 0.0);
+	theta_max = my_input->GetFloatFromUser("angular theta step end position", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+	image_index_in_stack = my_input->GetIntFromUser("image index in an image stack", "image index in an image stack", "1", 1);
 
 	int first_search_position = -1;
 	int last_search_position = -1;
@@ -234,7 +247,7 @@ void MatchTemplateApp::DoInteractiveUserInput()
 	delete my_input;
 
 
-	my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi",	input_search_images.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbiffffffi",	input_search_images.ToUTF8().data(),
 															input_reconstruction.ToUTF8().data(),
 															pixel_size,
 															voltage_kV,
@@ -275,7 +288,14 @@ void MatchTemplateApp::DoInteractiveUserInput()
 															result_filename.ToUTF8().data(),
 															min_peak_radius,
 															use_gpu_input,
-															max_threads);
+															max_threads,
+															in_plane_angular_step_start,
+															in_plane_angular_step_end,
+															phi_start,
+															phi_max,
+															theta_start,
+														  theta_max,
+														  image_index_in_stack);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -385,6 +405,14 @@ bool MatchTemplateApp::DoCalculation()
 	float		min_peak_radius = my_current_job.arguments[39].ReturnFloatArgument();
 	bool		use_gpu   = my_current_job.arguments[40].ReturnBoolArgument();
 	int			max_threads =  my_current_job.arguments[41].ReturnIntegerArgument();
+	float		in_plane_angular_step_start = my_current_job.arguments[42].ReturnFloatArgument();
+	float		in_plane_angular_step_end = my_current_job.arguments[43].ReturnFloatArgument();
+	float		phi_start = my_current_job.arguments[44].ReturnFloatArgument();
+	float		phi_max = my_current_job.arguments[45].ReturnFloatArgument();
+	float		theta_start = my_current_job.arguments[46].ReturnFloatArgument();
+	float		theta_max = my_current_job.arguments[47].ReturnFloatArgument();
+	int 		image_index_in_stack = my_current_job.arguments[48].ReturnIntegerArgument();
+
 
 	if (is_running_locally == false) max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
 
@@ -516,7 +544,7 @@ bool MatchTemplateApp::DoCalculation()
 
 	Image temp_image;
 
-	input_image.ReadSlice(&input_search_image_file, 1);
+	input_image.ReadSlice(&input_search_image_file, image_index_in_stack);
 
 	// Resize input image to be factorizable by small numbers
 	original_input_image_x = input_image.logical_x_dimension;
@@ -675,8 +703,8 @@ bool MatchTemplateApp::DoCalculation()
 	}
 
 	//psi_start = psi_step / 2.0 * global_random_number_generator.GetUniformRandom();
-	psi_start = 0.0f;
-	psi_max = 360.0f;
+	psi_start = in_plane_angular_step_start;//0.0f;
+	psi_max = in_plane_angular_step_end;//360.0f;
 
 	//psi_step = 5;
 
@@ -684,13 +712,17 @@ bool MatchTemplateApp::DoCalculation()
 
 	// search grid
 
-	global_euler_search.InitGrid(my_symmetry, angular_step, 0.0f, 0.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
+	global_euler_search.InitGrid(my_symmetry, angular_step, phi_start, phi_max, theta_start, theta_max, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
 //	wxPrintf("%s",my_symmetry);
 	if (my_symmetry.StartsWith("C1")) // TODO 2x check me - w/o this O symm at least is broken
 	{
 		if (global_euler_search.test_mirror == true) // otherwise the theta max is set to 90.0 and test_mirror is set to true.  However, I don't want to have to test the mirrors.
 		{
-			global_euler_search.theta_max = 180.0f;
+			global_euler_search.theta_max = theta_max;//180.0f;
+			//wxPrintf("theta max = %f\n", global_euler_search.theta_max);
+			//wxPrintf("theta start = %f\n", global_euler_search.theta_start);
+			//wxPrintf("phi max = %f\n", global_euler_search.phi_max);
+			//wxPrintf("phi start = %f\n", global_euler_search.phi_start);
 		}
 	}
 
@@ -782,8 +814,8 @@ bool MatchTemplateApp::DoCalculation()
 
 	wxPrintf("Performing Search...\n\n");
 
-//	wxPrintf("Searching %i - %i of %i total positions\n", first_search_position, last_search_position, global_euler_search.number_of_search_positions);
-//	wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
+	wxPrintf("Searching %i - %i of %i total positions\n", first_search_position, last_search_position, global_euler_search.number_of_search_positions);
+	wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
 
 	actual_number_of_ccs_calculated = 0.0;
 
