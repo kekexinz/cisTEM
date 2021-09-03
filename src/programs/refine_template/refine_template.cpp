@@ -137,6 +137,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 
 
 	int			max_threads;
+	int     image_index_in_stack = 1;
 
 	UserInput *my_input = new UserInput("RefineTemplate", 1.00);
 
@@ -191,6 +192,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 #else
 	max_threads = 1;
 #endif
+  image_index_in_stack = my_input->GetIntFromUser("image index in an image stack", "image index in an image stack", "1", 1);
 
 	int first_search_position = -1;
 	int last_search_position = -1;
@@ -204,7 +206,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(42);
-	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiitft",	input_search_images.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiiitft",	input_search_images.ToUTF8().data(),
 															input_reconstruction.ToUTF8().data(),
 															pixel_size,
 															voltage_kV,
@@ -254,6 +256,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 															number_of_jobs_per_image_in_gui,
 															result_number,
 															max_threads,
+															image_index_in_stack,
 															directory_for_results.ToUTF8().data(),
 															threshold_for_result_plotting,
 															filename_for_gui_result_image.ToUTF8().data());
@@ -317,9 +320,10 @@ bool RefineTemplateApp::DoCalculation()
 	int 		number_of_jobs_per_image_in_gui = my_current_job.arguments[45].ReturnIntegerArgument();
 	int 		result_number = my_current_job.arguments[46].ReturnIntegerArgument();
 	int 		max_threads = my_current_job.arguments[47].ReturnIntegerArgument();
-	wxString	directory_for_results = my_current_job.arguments[48].ReturnStringArgument();
-	float		threshold_for_result_plotting = my_current_job.arguments[49].ReturnFloatArgument();
-	wxString 	filename_for_gui_result_image = my_current_job.arguments[50].ReturnStringArgument();
+	int     image_index_in_stack = my_current_job.arguments[48].ReturnIntegerArgument();
+	wxString	directory_for_results = my_current_job.arguments[49].ReturnStringArgument();
+	float		threshold_for_result_plotting = my_current_job.arguments[50].ReturnFloatArgument();
+	wxString 	filename_for_gui_result_image = my_current_job.arguments[51].ReturnStringArgument();
 
 	if (is_running_locally == false) max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
 
@@ -466,7 +470,7 @@ bool RefineTemplateApp::DoCalculation()
 	{
 		SendErrorAndCrash("Error: Input files do not contain selected result\n");
 	}
-	input_image.ReadSlice(&input_search_image_file, result_number);
+	input_image.ReadSlice(&input_search_image_file, image_index_in_stack);
 	mip_image.ReadSlice(&mip_input_file, result_number);
 	scaled_mip_image.ReadSlice(&scaled_mip_input_file, result_number);
 	psi_image.ReadSlice(&best_psi_input_file, result_number);
@@ -586,7 +590,7 @@ bool RefineTemplateApp::DoCalculation()
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
 				// The square centered at the pixel
-				if ( sq_dist_x + sq_dist_y <= min_peak_radius )
+				if ( sq_dist_x + sq_dist_y <= pow(min_peak_radius,2) ) // Kexin: this is not radius?
 				{
 					best_scaled_mip.real_values[address] = -FLT_MAX;
 				}
@@ -829,10 +833,11 @@ bool RefineTemplateApp::DoCalculation()
 //								best_phi.real_values[current_address] = current_phi + phi_i * angular_step;
 								best_defocus_local.real_values[best_address] = current_defocus + defocus_is * defocus_step;
 //								best_pixel_size_local.real_values[best_address] = current_pixel_size;
-								if (max_threads == 1) wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
+								if (max_threads == 1)  wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
 										best_psi_local.real_values[best_address] - psi_image.real_values[current_address], best_theta_local.real_values[best_address] - theta_image.real_values[current_address], \
 										best_phi_local.real_values[best_address] - phi_image.real_values[current_address], best_defocus_local.real_values[best_address] - defocus_image.real_values[current_address], \
 										best_pixel_size_local.real_values[best_address] - pixel_size_image.real_values[current_address], temp_float);
+
 
 //								if (max_threads == 1 && offset_distance * pixel_size > xy_change_threshold) wxPrintf("Warning: peak moved by %g A\n", offset_distance * pixel_size);
 							}
@@ -851,7 +856,7 @@ bool RefineTemplateApp::DoCalculation()
 					defocus_i = 0;
 //					score = best_score;
 
-					mult_i_start = defocus_step/defocus_refine_step;
+					mult_i_start = defocus_step/defocus_refine_step;  // = 5.0 what is this for???
 					for (mult_i = mult_i_start; mult_i > 0.5f; mult_i /= 2.0f)
 					{
 						for (ll = 0; ll < 2; ll = -2 * ll + 1)
@@ -906,10 +911,14 @@ bool RefineTemplateApp::DoCalculation()
 															best_phi_local.real_values[best_address] = current_phi + phi_i * angular_step;
 															best_defocus_local.real_values[best_address] = current_defocus + defocus_i * defocus_refine_step;
 															best_pixel_size_local.real_values[best_address] = current_pixel_size;
-															if (max_threads == 1) wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
+															if (max_threads == 1)
+															{
+																wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
 																	best_psi_local.real_values[best_address] - psi_image.real_values[current_address], best_theta_local.real_values[best_address] - theta_image.real_values[current_address], \
 																	best_phi_local.real_values[best_address] - phi_image.real_values[current_address], best_defocus_local.real_values[best_address] - defocus_image.real_values[current_address], \
 																	best_pixel_size_local.real_values[best_address] - pixel_size_image.real_values[current_address], temp_float);
+																wxPrintf("here 1\n");
+															}
 //															if (max_threads == 1 && offset_distance * pixel_size > xy_change_threshold) wxPrintf("Warning: peak moved by %g A\n", offset_distance * pixel_size);
 //															if (first_score == false) {first_score = true; starting_score = temp_float;}
 //															addresses[peak_number] = best_address;
@@ -927,7 +936,7 @@ bool RefineTemplateApp::DoCalculation()
 							if (defocus_search_range != 0.0f) defocus_i -= ll;
 						}
 					}
-
+					
 					// Do pixel_size scan
 					current_phi = best_phi_local.real_values[best_address];
 					current_theta = best_theta_local.real_values[best_address];
@@ -964,10 +973,14 @@ bool RefineTemplateApp::DoCalculation()
 								temp_float = score_adjustment * scaled_mip_image.real_values[current_address] * best_score / mip_image.real_values[current_address] * sqrtf(projection_filter.logical_x_dimension * projection_filter.logical_y_dimension);
 	//							if (max_threads == 1) wxPrintf("Value for dpsi, dtheta, dphi, dpixel size = %f, %f, %f, %f : %f\n", psi_i * in_plane_angular_step, theta_i * angular_step, phi_i * angular_step, size_is * pixel_size_refine_step, temp_float);
 								best_pixel_size_local.real_values[best_address] = current_pixel_size + size_is * pixel_size_refine_step;
-								if (max_threads == 1) wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
+								if (max_threads == 1)
+								{
+									wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
 										best_psi_local.real_values[best_address] - psi_image.real_values[current_address], best_theta_local.real_values[best_address] - theta_image.real_values[current_address], \
 										best_phi_local.real_values[best_address] - phi_image.real_values[current_address], best_defocus_local.real_values[best_address] - defocus_image.real_values[current_address], \
 										best_pixel_size_local.real_values[best_address] - pixel_size_image.real_values[current_address], temp_float);
+									wxPrintf("here 2\n");
+								}
 //								if (max_threads == 1 && offset_distance * pixel_size > xy_change_threshold) wxPrintf("Warning: peak moved by %g A\n", offset_distance * pixel_size);
 							}
 						}
@@ -1063,10 +1076,13 @@ bool RefineTemplateApp::DoCalculation()
 															best_phi_local.real_values[best_address] = current_phi + phi_i * angular_step;
 															best_defocus_local.real_values[best_address] = current_defocus;
 															best_pixel_size_local.real_values[best_address] = current_pixel_size + size_i * pixel_size_refine_step;
-															if (max_threads == 1) wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
+															if (max_threads == 1)
+															{
+																wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, best_peak.x * pixel_size, best_peak.y * pixel_size, \
 																	best_psi_local.real_values[best_address] - psi_image.real_values[current_address], best_theta_local.real_values[best_address] - theta_image.real_values[current_address], \
 																	best_phi_local.real_values[best_address] - phi_image.real_values[current_address], best_defocus_local.real_values[best_address] - defocus_image.real_values[current_address], \
 																	best_pixel_size_local.real_values[best_address] - pixel_size_image.real_values[current_address], temp_float);
+																wxPrintf("here 3\n");}
 //															if (max_threads == 1 && offset_distance * pixel_size > xy_change_threshold) wxPrintf("Warning: peak moved by %g A\n", offset_distance * pixel_size);
 //															addresses[peak_number] = best_address;
 														}
@@ -1083,6 +1099,7 @@ bool RefineTemplateApp::DoCalculation()
 							if (pixel_size_search_range != 0.0f) size_i -= ll;
 						}
 					}
+
 				}
 				address++;
 			}
