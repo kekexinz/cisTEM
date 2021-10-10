@@ -26,23 +26,40 @@ void NikoTestApp::DoInteractiveUserInput()
 
 bool NikoTestApp::DoCalculation()
 {
-	MRCFile input_img_patch("img.mrc", false);
-	MRCFile input_ref_patch("ref.mrc", false);
+	MRCFile input_img_patch("6sct_1024_1A_3_no_shift.mrc", false);
+	//MRCFile input_ref_patch("ref.mrc", false);
 	Image img;
-	Image ref;
+	Image larger_img;
+	Image mask,local_mean,local_std;
+	//Image ref;
 
 	img.Allocate(input_img_patch.ReturnXSize(), input_img_patch.ReturnYSize(), true);
-	ref.Allocate(input_ref_patch.ReturnXSize(), input_ref_patch.ReturnYSize(), true);
+	img.ReadSlice(&input_img_patch, 1);
+	//ref.Allocate(input_ref_patch.ReturnXSize(), input_ref_patch.ReturnYSize(), true);
+	larger_img.Allocate(2048,2048,true);
+	img.ClipIntoLargerRealSpace2D(&larger_img);
+	//ref.ForwardFFT();
 
-	img.ForwardFFT();
-	ref.ForwardFFT();
+	larger_img.ReplaceOutliersWithMean(5.0f);
 
-	for (int pixel_counter = 0; pixel_counter < ref.real_memory_allocated / 2; pixel_counter ++)
-	{
-		ref.complex_values[pixel_counter] = conj(ref.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
-	}
+	mask.Allocate(larger_img.logical_x_dimension, larger_img.logical_y_dimension, 1);
+	local_mean.Allocate(larger_img.logical_x_dimension, larger_img.logical_y_dimension, 1);
+	local_std.Allocate(larger_img.logical_x_dimension, larger_img.logical_y_dimension, 1);
 
-	ref.QuickAndDirtyWriteSlice("tmp/cc.mrc",1);
+	mask.SetToConstant(1.0f);
+	float P = mask.CosineMask(100 / 2, 1, false, true, 0.0);
+	wxPrintf("P=%f\n",P);
+	wxPrintf("sum=%f\n", mask.ReturnSumOfRealValues());
+	mask.QuickAndDirtyWriteSlice("circular_mask.mrc",1);
+	 // end of circular mask definition
+
+	larger_img.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
+
+	local_mean.QuickAndDirtyWriteSlice("circular_mask/local_mean.mrc",1);
+	local_std.SquareRootRealValues();
+	local_std.QuickAndDirtyWriteSlice("circular_mask/local_std.mrc",1);
+	exit(0);
+
 	/*
 	// override original
 	// calculates average density from projections
@@ -476,7 +493,7 @@ bool NikoTestApp::DoCalculation()
 //	for (i = 0; i < input_image.real_memory_allocated; i++) if (input_image.real_values[i] < 0.0) input_image.real_values[i] = -log(-input_image.real_values[i] + 1.0);
 //	input_image.WriteSlices(&output_file,1,input_image.logical_z_dimension);
 //	temp_float = -420.5; wxPrintf("%g\n", fmodf(temp_float, 360.0));
-//	filtered_image.WriteSlices(&output_file,1,input_image.logical_z_dimension);
+//	filtered_image.WriteSlices(&output_file,1,img.logical_z_dimension);
 
 	return true;
 }
