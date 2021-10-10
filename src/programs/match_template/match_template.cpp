@@ -709,7 +709,7 @@ bool MatchTemplateApp::DoCalculation()
 	// remove outliers
 	// This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
 	input_image.ReplaceOutliersWithMean(5.0f);
-	input_image.QuickAndDirtyWriteSlice("circular_mask/input_image_raw_rotated.mrc",1);
+	input_image.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask/input_image_raw_rotated.mrc",1);
 
 	/// local normalization using mask
 	Image mask;
@@ -723,10 +723,10 @@ bool MatchTemplateApp::DoCalculation()
 	local_std.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 
 	mask.SetToConstant(1.0f);
-	float P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 2, 1, false, true, 0.0);
+	float P = mask.CosineMask(current_projection.logical_x_dimension * pixel_size / 8, 1, false, true, 0.0); // /2
 	wxPrintf("P=%f\n",P);
 	wxPrintf("sum=%f\n", mask.ReturnSumOfRealValues());
-	mask.QuickAndDirtyWriteSlice("circular_mask.mrc",1);
+	mask.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask.mrc",1);
 	mask_copy.CopyFrom(&mask);
 	 // end of circular mask definition
 
@@ -740,14 +740,14 @@ bool MatchTemplateApp::DoCalculation()
   */ // end of density mask read-in
 
 	input_image.ComputeLocalMeanAndVarianceMaps(&local_mean, &local_std, &mask, long(P));
-	local_mean.QuickAndDirtyWriteSlice("circular_mask/local_mean.mrc",1);
-	local_std.SquareRootRealValues();
-	local_std.QuickAndDirtyWriteSlice("circular_mask/local_std.mrc",1);
+	local_mean.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask/local_mean.mrc",1);
+	//local_std.SquareRootRealValues();
+	local_std.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask/local_std.mrc",1);
 
 
-	input_image.SubtractImage(&local_mean);
+	//input_image.SubtractImage(&local_mean);
 	input_image.DividePixelWise(local_std);
-	input_image.QuickAndDirtyWriteSlice("circular_mask/input_image_normalized.mrc",1);
+	input_image.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask/input_image_normalized.mrc",1);
 	/// local normalization block end
 
 	input_image.ForwardFFT();
@@ -760,10 +760,10 @@ bool MatchTemplateApp::DoCalculation()
 	whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue());
 
 	//whitening_filter.WriteToFile("/tmp/filter.txt");
-	input_image.ApplyCurveFilter(&whitening_filter);
-	input_image.ZeroCentralPixel();
-	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
-	input_image.QuickAndDirtyWriteSlice("circular_mask/white.mrc", 1);
+//	input_image.ApplyCurveFilter(&whitening_filter);
+//	input_image.ZeroCentralPixel();
+//	input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares()));
+//	input_image.QuickAndDirtyWriteSlice("/groups/kexin/research/scaling_mip/simulated_clathrin/circular_mask/white.mrc", 1);
 
 	// count total searches (lazy)
 
