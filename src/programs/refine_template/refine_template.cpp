@@ -26,6 +26,7 @@ Peak TemplateScore(void *scoring_parameters)
 {
 	TemplateComparisonObject *comparison_object = reinterpret_cast < TemplateComparisonObject *> (scoring_parameters);
 	Image current_projection;
+	float amplitude;
 //	Peak box_peak;
 
 	current_projection.Allocate(comparison_object->projection_filter->logical_x_dimension, comparison_object->projection_filter->logical_x_dimension, false);
@@ -67,6 +68,14 @@ Peak TemplateScore(void *scoring_parameters)
 		current_projection.complex_values[pixel_counter] = std::conj(current_projection.complex_values[pixel_counter]) * comparison_object->windowed_particle->complex_values[pixel_counter];
 	}
 #endif
+	// phase correlation
+	for (long pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
+	{
+		amplitude = abs(current_projection.complex_values[pixel_counter]);
+		if (amplitude==0.0f) amplitude = 0.000001f;
+		current_projection.complex_values[pixel_counter] /= amplitude;
+	}
+
 	current_projection.BackwardFFT();
 //	wxPrintf("ping");
 
@@ -138,7 +147,7 @@ void RefineTemplateApp::DoInteractiveUserInput()
 
 	int			max_threads;
 
-	UserInput *my_input = new UserInput("RefineTemplate", 1.00);
+	UserInput *my_input = new UserInput("RefineTemplate using phase-only correlation", 1.00);
 
 	input_search_images = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
 	input_reconstruction = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
