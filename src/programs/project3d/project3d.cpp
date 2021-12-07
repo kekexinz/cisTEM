@@ -200,7 +200,9 @@ bool Project3DApp::DoCalculation()
 
 	projection_image.Allocate(input_file.ReturnXSize(), input_file.ReturnYSize(), false);
 	final_image.Allocate(input_file.ReturnXSize(), input_file.ReturnYSize(), true);
-	RandomNumberGenerator local_random_generator(int(fabsf(global_random_number_generator.GetUniformRandom()*50000)), true);
+	//RandomNumberGenerator local_random_generator(int(fabsf(global_random_number_generator.GetUniformRandom()*50000)), true);
+	RandomNumberGenerator local_random_generator(36468, true);
+	//wxPrintf("global_random_number_generatpr=%i",int(fabsf(global_random_number_generator.GetUniformRandom()*50000)));
 
 	#pragma omp for ordered schedule(static, 1)
 	for (current_image = 0; current_image < lines_to_process.GetCount(); current_image++)
