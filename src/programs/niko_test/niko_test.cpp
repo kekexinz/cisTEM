@@ -714,7 +714,7 @@ bool NikoTestApp::DoCalculation()
 
 					for (int k=0; k <= 54; k++)
 					{
-						input_truncated_reconstruction_file.OpenFile(wxString::Format("/scratch/roma/kexin/MOSAICS/truncated_%i.mrc", k).ToStdString(), false);
+						input_truncated_reconstruction_file.OpenFile(wxString::Format("/groups/kexin/research/aaMOSAICS/truncated_templates/truncated_%i.mrc", k).ToStdString(), false);
 						input_truncated_reconstruction.ReadSlices(&input_truncated_reconstruction_file, 1, input_truncated_reconstruction_file.ReturnNumberOfSlices());
 						//wxPrintf("x = %i y = %i z = %i\n", input_truncated_reconstruction.logical_x_dimension, input_truncated_reconstruction.logical_y_dimension, input_truncated_reconstruction.logical_z_dimension);
 						//input_truncated_reconstruction.QuickAndDirtyWriteSlices("test.mrc", 1, input_truncated_reconstruction.logical_z_dimension);
