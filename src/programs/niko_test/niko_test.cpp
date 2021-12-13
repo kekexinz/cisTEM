@@ -21,7 +21,7 @@ public:
 //	int							slice = 1;
 };
 
-Peak TemplateScore(void *scoring_parameters, float peak_location_x, float peak_location_y)
+Peak TemplateScore(void *scoring_parameters)
 {
 	TemplateComparisonObject *comparison_object = reinterpret_cast < TemplateComparisonObject *> (scoring_parameters);
 	Image current_projection;
@@ -58,6 +58,7 @@ Peak TemplateScore(void *scoring_parameters, float peak_location_x, float peak_l
 //	current_projection.ForwardFFT();
 	current_projection.ZeroCentralPixel();
 	current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares()));
+	//current_projection.QuickAndDirtyWriteSlice("projections.mrc",1);
 #ifdef MKL
 	// Use the MKL
 	vmcMulByConj(current_projection.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (comparison_object->windowed_particle->complex_values),reinterpret_cast <MKL_Complex8 *> (current_projection.complex_values),reinterpret_cast <MKL_Complex8 *> (current_projection.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
@@ -81,8 +82,10 @@ Peak TemplateScore(void *scoring_parameters, float peak_location_x, float peak_l
 	float sq_dist_x, sq_dist_y;
 
 	long address_in_current_projection = 0;
-	peak_location_x = peak_location_x + current_projection.physical_address_of_box_center_x;
-	peak_location_y = peak_location_y + current_projection.physical_address_of_box_center_y;
+	float peak_location_x = current_projection.physical_address_of_box_center_x;
+	float peak_location_y = current_projection.physical_address_of_box_center_y;
+	//wxPrintf("peak_location_x=%f\n", peak_location_x);
+	//wxPrintf("peak_location_y=%f\n", peak_location_y);
 
 	for ( j = 0; j < current_projection.logical_y_dimension; j ++ )
 	{
@@ -598,11 +601,12 @@ bool NikoTestApp::DoCalculation()
 	padded_reference.CopyFrom(&input_image);
 	padded_reference.RealSpaceIntegerShift(peak_position_x, peak_position_y); //TODO
 	padded_reference.ClipInto(&windowed_particle);
+//	windowed_particle.QuickAndDirtyWriteSlice("windowed_particle.mrc",1);
 	windowed_particle.ForwardFFT();
 	windowed_particle.SwapRealSpaceQuadrants();
 	template_object.pixel_size_factor = 1.0f;
 
-//	windowed_particle.QuickAndDirtyWriteSlice("windowed_particle.mrc",1);
+	
 
 
 	//peak_position_x = peak_position_x + input_image.physical_address_of_box_center_x;
@@ -630,10 +634,14 @@ bool NikoTestApp::DoCalculation()
 	for (current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++)
 	{
 		//loop over each rotation angle
-		angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+		//angles.Init(193.98,57.30,203.80,0.0,0.0);
+		//template_peak = TemplateScore(&template_object);
+		//exit(0);
+
 		for (current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step)
 		{
-			template_peak = TemplateScore(&template_object, peak_position_x, peak_position_y);
+			angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+			template_peak = TemplateScore(&template_object);
 	//		tid = ReturnThreadNumberOfCurrentThread();
 
 		//current_correlation_position++;
