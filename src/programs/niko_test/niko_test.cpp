@@ -22,11 +22,11 @@ public:
 };
 
 // This is the function which will be minimized
-Peak TemplateScore(void *scoring_parameters)
+Peak TemplateScore(void *scoring_parameters, bool phase_only)
 {
 	TemplateComparisonObject *comparison_object = reinterpret_cast < TemplateComparisonObject *> (scoring_parameters);
 	Image current_projection;
-	float amplitude;
+	double amplitude=0.0;
 //	Peak box_peak;
 
 	current_projection.Allocate(comparison_object->projection_filter->logical_x_dimension, comparison_object->projection_filter->logical_x_dimension, false);
@@ -59,6 +59,8 @@ Peak TemplateScore(void *scoring_parameters)
 //	current_projection.ForwardFFT();
 	current_projection.ZeroCentralPixel();
 	current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares()));
+	//current_projection.QuickAndDirtyWriteSlice("template.mrc",1);
+	//comparison_object->windowed_particle->QuickAndDirtyWriteSlice("image.mrc",1);
 #ifdef MKL
 	// Use the MKL
 	vmcMulByConj(current_projection.real_memory_allocated/2,reinterpret_cast <MKL_Complex8 *> (comparison_object->windowed_particle->complex_values),reinterpret_cast <MKL_Complex8 *> (current_projection.complex_values),reinterpret_cast <MKL_Complex8 *> (current_projection.complex_values),VML_EP|VML_FTZDAZ_ON|VML_ERRMODE_IGNORE);
@@ -70,14 +72,18 @@ Peak TemplateScore(void *scoring_parameters)
 #endif
 
 	// phase correlation
-	for (long pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
-	{
-		amplitude = abs(current_projection.complex_values[pixel_counter]);
-		if (amplitude==0.0f) amplitude = 0.000001f;
-		current_projection.complex_values[pixel_counter] /= amplitude;
+	if (phase_only){
+		for (long pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter ++)
+		{
+			amplitude = abs(current_projection.complex_values[pixel_counter]);
+			
+			//if (amplitude==0.0f) {amplitude = 0.00000000001;}
+			current_projection.complex_values[pixel_counter] /= (amplitude+0.000000000001);
+		}
 	}
-
+	
 	current_projection.BackwardFFT();
+	//current_projection.QuickAndDirtyWriteSlice("pc.mrc",1);
 //	wxPrintf("ping");
 
 	return current_projection.FindPeakWithIntegerCoordinates();
@@ -114,6 +120,8 @@ void NikoTestApp::DoInteractiveUserInput()
 	wxString    mip_output_file;
 	wxString    scaled_mip_output_file;
 
+	wxString    path_to_template;
+
 	float		pixel_size = 1.0f;
 	float		voltage_kV = 300.0f;
 	float		spherical_aberration_mm = 2.7f;
@@ -142,15 +150,20 @@ void NikoTestApp::DoInteractiveUserInput()
 	float 		min_peak_radius;
 	float		xy_change_threshold = 10.0f;
 	bool		exclude_above_xy_threshold = false;
+	bool        phase_only_refinement = true;
 	int			result_number = 1;
 
 
 	int			max_threads;
 
+	int 		template_starting_index = 0;
+	int  		template_ending_index = 54;
+
 	UserInput *my_input = new UserInput("RefineTemplate Constrained", 1.00);
 
 	input_search_images = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
 	input_reconstruction = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
+	path_to_template = my_input->GetFilenameFromUser("Path to truncated templates", "The directory that stores truncated templates", "/groups/kexin/research/aaMOSAICS/truncated_templates/", false);
 	mip_input_filename = my_input->GetFilenameFromUser("Input MIP file", "The file with the maximum intensity projection image", "mip.mrc", false);
 	scaled_mip_input_filename = my_input->GetFilenameFromUser("Input scaled MIP file", "The file with the scaled MIP (peak search done on this image)", "scaled_mip.mrc", false);
 	best_psi_input_filename = my_input->GetFilenameFromUser("Input psi file", "The file with the best psi image", "psi.mrc", true);
@@ -194,7 +207,10 @@ void NikoTestApp::DoInteractiveUserInput()
 	xy_change_threshold = my_input->GetFloatFromUser("Moved peak warning (A)", "Threshold for displaying warning of peak location changes during refinement", "10.0", 0.0);
 	exclude_above_xy_threshold = my_input->GetYesNoFromUser("Exclude moving peaks", "Should the peaks that move more than the threshold be excluded from the output MIPs?", "No");
 	result_number = my_input->GetIntFromUser("Result number to refine", "If input files contain results from several searches, which one should be refined?", "1", 1);
-
+	phase_only_refinement = my_input->GetYesNoFromUser("Refine with only phase information", "Should the refinement be calculated using only phase information?", "Yes");
+	template_starting_index = my_input->GetIntFromUser("Truncated template starting index (0=full length template)", "Index of first starting index", "0", 0,1000);
+	template_ending_index = my_input->GetIntFromUser("Truncated template ending index (default=54)", "Index of first starting index", "54", 0,1000);
+	
 #ifdef _OPENMP
 	max_threads = my_input->GetIntFromUser("Max. threads to use for calculation", "When threading, what is the max threads to run", "1", 1);
 #else
@@ -213,7 +229,7 @@ void NikoTestApp::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(42);
-	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiitft",	input_search_images.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiitftbiit",	input_search_images.ToUTF8().data(),
 															input_reconstruction.ToUTF8().data(),
 															pixel_size,
 															voltage_kV,
@@ -265,7 +281,11 @@ void NikoTestApp::DoInteractiveUserInput()
 															max_threads,
 															directory_for_results.ToUTF8().data(),
 															threshold_for_result_plotting,
-															filename_for_gui_result_image.ToUTF8().data());
+															filename_for_gui_result_image.ToUTF8().data(),
+															phase_only_refinement,
+															template_starting_index,
+															template_ending_index,
+															path_to_template.ToUTF8().data());
 }
 
 // override the do calculation method which will be what is actually run..
@@ -329,6 +349,10 @@ bool NikoTestApp::DoCalculation()
 	wxString	directory_for_results = my_current_job.arguments[48].ReturnStringArgument();
 	float		threshold_for_result_plotting = my_current_job.arguments[49].ReturnFloatArgument();
 	wxString 	filename_for_gui_result_image = my_current_job.arguments[50].ReturnStringArgument();
+	bool        phase_only_refinement = my_current_job.arguments[51].ReturnBoolArgument();
+	int 		template_starting_index = my_current_job.arguments[52].ReturnIntegerArgument();
+	int 		template_ending_index = my_current_job.arguments[53].ReturnIntegerArgument();
+	wxString    path_to_template = my_current_job.arguments[54].ReturnStringArgument();
 
 	if (is_running_locally == false) max_threads = number_of_threads_requested_on_command_line;
 
@@ -681,12 +705,6 @@ bool NikoTestApp::DoCalculation()
 			{
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
-				// The square centered at the pixel
-//				if ( sq_dist_x + sq_dist_y <= min_peak_radius )
-//				{
-//					scaled_mip_image_local.real_values[address] = -FLT_MAX;
-//				}
-
 				if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)
 				{ // now we are on top of the peak
 					current_address = address;
@@ -706,7 +724,7 @@ bool NikoTestApp::DoCalculation()
 					projection_filter.CalculateCTFImage(input_ctf);
 					projection_filter.ApplyCurveFilter(&whitening_filter);
 
-					template_peak = TemplateScore(&template_object); // original peak height, this is the cross correlation score
+					template_peak = TemplateScore(&template_object, phase_only_refinement); // original peak height, this is the cross correlation score
 					wxPrintf("Full length template cc = %f\n", template_peak.value);
 					//starting_score = template_peak.value * sqrtf(projection_filter.logical_x_dimension * projection_filter.logical_y_dimension);
 					//wxPrintf("starting score = %f\n", starting_score);
@@ -717,10 +735,10 @@ bool NikoTestApp::DoCalculation()
 					//wxPrintf("starting score new = %f\n", starting_score);
 
 					// now I feed truncated templates into cross correlation calculator
-
-					for (int k=0; k <= 54; k++)
+					
+					for (int k=template_starting_index; k <= template_ending_index; k++)
 					{
-						input_truncated_reconstruction_file.OpenFile(wxString::Format("/scratch/roma/kexin/MOSAICS/truncated_%i.mrc", k).ToStdString(), false);
+						input_truncated_reconstruction_file.OpenFile(wxString::Format(path_to_template+"truncated_%i.mrc", k).ToStdString(), false);
 						input_truncated_reconstruction.ReadSlices(&input_truncated_reconstruction_file, 1, input_truncated_reconstruction_file.ReturnNumberOfSlices());
 						//wxPrintf("x = %i y = %i z = %i\n", input_truncated_reconstruction.logical_x_dimension, input_truncated_reconstruction.logical_y_dimension, input_truncated_reconstruction.logical_z_dimension);
 						//input_truncated_reconstruction.QuickAndDirtyWriteSlices("test.mrc", 1, input_truncated_reconstruction.logical_z_dimension);
@@ -738,7 +756,7 @@ bool NikoTestApp::DoCalculation()
 
 						// calculate cc
 						template_object.input_reconstruction = &input_truncated_reconstruction;
-						template_peak = TemplateScore(&template_object);
+						template_peak = TemplateScore(&template_object, phase_only_refinement);
 						wxPrintf("Template %i cc = %f\n", k, template_peak.value);
 					}
 
