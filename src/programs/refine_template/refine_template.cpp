@@ -169,8 +169,8 @@ void RefineTemplateApp::DoInteractiveUserInput()
 //	low_resolution_limit = my_input->GetFloatFromUser("Low resolution limit (A)", "Low resolution limit of the data used for alignment in Angstroms", "300.0", 0.0);
 //	high_resolution_limit = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
 //	angular_range = my_input->GetFloatFromUser("Angular refinement range", "AAngular range to refine", "2.0", 0.1);
-	angular_step = my_input->GetFloatFromUser("Out of plane angular step", "Angular step size for global grid search", "0.2", 0.01);
-	in_plane_angular_step = my_input->GetFloatFromUser("In plane angular step", "Angular step size for in-plane rotations during the search", "0.1", 0.01);
+	angular_step = my_input->GetFloatFromUser("Out of plane angular step", "Angular step size for global grid search", "0.2", 0.00);
+	in_plane_angular_step = my_input->GetFloatFromUser("In plane angular step", "Angular step size for in-plane rotations during the search", "0.1", 0.00);
 //	best_parameters_to_keep = my_input->GetIntFromUser("Number of top hits to refine", "The number of best global search orientations to refine locally", "20", 1);
 	defocus_search_range = my_input->GetFloatFromUser("Defocus search range (A) (0.0 = no search)", "Search range (-value ... + value) around current defocus", "200.0", 0.0);
 	defocus_search_step = my_input->GetFloatFromUser("Desired defocus accuracy (A)", "Accuracy to be achieved in defocus search", "10.0", 0.0);
@@ -459,6 +459,7 @@ bool RefineTemplateApp::DoCalculation()
 	int number_of_peaks_found = 0;
 	int peak_number;
 	float mask_falloff = 20.0;
+	float min_peak_radius2 = powf(min_peak_radius, 2);
 
 	if ((input_search_image_file.ReturnZSize() < result_number) || (mip_input_file.ReturnZSize() < result_number) || (scaled_mip_input_file.ReturnZSize() < result_number) \
 		|| (best_psi_input_file.ReturnZSize() < result_number) || (best_theta_input_file.ReturnZSize() < result_number) || (best_phi_input_file.ReturnZSize() < result_number) \
@@ -544,6 +545,7 @@ bool RefineTemplateApp::DoCalculation()
 	input_image.ZeroCentralPixel();
 	input_image.DivideByConstant(sqrt(input_image.ReturnSumOfSquares()));
 	input_image.BackwardFFT();
+	input_image.QuickAndDirtyWriteSlice("test/input_image.mrc",1);
 
 	Peak *found_peaks = new Peak[input_image.logical_x_dimension * input_image.logical_y_dimension / 100];
 //	long *addresses = new long[input_image.logical_x_dimension * input_image.logical_y_dimension / 100];
@@ -586,7 +588,7 @@ bool RefineTemplateApp::DoCalculation()
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
 				// The square centered at the pixel
-				if ( sq_dist_x + sq_dist_y <= min_peak_radius )
+				if ( sq_dist_x + sq_dist_y <= min_peak_radius2 )
 				{
 					best_scaled_mip.real_values[address] = -FLT_MAX;
 				}
@@ -664,7 +666,7 @@ bool RefineTemplateApp::DoCalculation()
 
 	#pragma omp parallel num_threads(max_threads) default(none) shared(number_of_peaks_found, found_peaks, input_image, mask_radius, pixel_size, mask_falloff, \
 		mip_image, scaled_mip_image, phi_image, theta_image, psi_image, defocus_image, pixel_size_image, defocus_search_range, defocus_refine_step, pixel_size_search_range, \
-		pixel_size_refine_step, defocus1, defocus2, defocus_angle, angular_step, in_plane_angular_step, whitening_filter, input_reconstruction, min_peak_radius, best_mip, \
+		pixel_size_refine_step, defocus1, defocus2, defocus_angle, angular_step, in_plane_angular_step, whitening_filter, input_reconstruction, min_peak_radius2, best_mip, \
 		best_scaled_mip, best_phi, best_theta, best_psi, best_defocus, best_pixel_size, input_reconstruction_file, voltage_kV, spherical_aberration_mm, amplitude_contrast, \
 		phase_shift, max_threads, defocus_step, xy_change_threshold, exclude_above_xy_threshold, all_peak_changes, all_peak_infos) \
 	private(current_peak, padded_reference, windowed_particle, sq_dist_x, sq_dist_y, address, current_address, current_phi, current_theta, current_psi, current_defocus, \
@@ -709,10 +711,11 @@ bool RefineTemplateApp::DoCalculation()
 		current_peak = found_peaks[peak_number];
 
 		// ok we have peak..
-
+		wxPrintf("current_x=%f current_y=%f\n",current_peak.x, current_peak.y);
 		padded_reference.CopyFrom(&input_image);
 		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y);
 		padded_reference.ClipInto(&windowed_particle);
+		windowed_particle.QuickAndDirtyWriteSlice(wxString::Format("test/windowed_%i.mrc", peak_number).ToStdString(),1);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size);
 		windowed_particle.ForwardFFT();
 		windowed_particle.SwapRealSpaceQuadrants();
@@ -740,7 +743,7 @@ bool RefineTemplateApp::DoCalculation()
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
 				// The square centered at the pixel
-//				if ( sq_dist_x + sq_dist_y <= min_peak_radius )
+//				if ( sq_dist_x + sq_dist_y <= min_peak_radius2 )
 //				{
 //					scaled_mip_image_local.real_values[address] = -FLT_MAX;
 //				}
@@ -765,6 +768,7 @@ bool RefineTemplateApp::DoCalculation()
 
 //					input_reconstruction.RandomisePhases(pixel_size / 20.0f);
 					template_peak = TemplateScore(&template_object);
+					wxPrintf("template peak = %f\n", template_peak.value);
 //					starting_score = template_peak.value;
 //					wxPrintf("0 peak x, y, value = %g %g %g\n", template_peak.x, template_peak.y, template_peak.value);
 //					float s = 0.0f, a = 0.0f;
@@ -785,12 +789,15 @@ bool RefineTemplateApp::DoCalculation()
 					starting_score = template_peak.value * sqrtf(projection_filter.logical_x_dimension * projection_filter.logical_y_dimension);
 					score_adjustment = 1.0f;
 //					score_adjustment = mip_image.real_values[address] / template_peak.value / sqrtf(template_object.windowed_particle->logical_x_dimension * template_object.windowed_particle->logical_y_dimension);
-//					wxPrintf("old, new score = %g %g\n", mip_image.real_values[address], template_peak.value * sqrtf(template_object.windowed_particle->logical_x_dimension * template_object.windowed_particle->logical_y_dimension));
+					wxPrintf("old, new score = %g %g\n", mip_image.real_values[address], template_peak.value * sqrtf(template_object.windowed_particle->logical_x_dimension * template_object.windowed_particle->logical_y_dimension));
 //					exit(0);
 					starting_score = score_adjustment * scaled_mip_image.real_values[current_address] * starting_score / mip_image.real_values[current_address];
 
 					if (max_threads == 1) wxPrintf("\nRefining peak %i at x, y =  %6i, %6i\n", peak_number + 1, myroundint(current_peak.x), myroundint(current_peak.y));
-
+					if (angular_step == 0.0 && in_plane_angular_step == 0.0) {
+						if (max_threads == 1) wxPrintf("Peak %4i: dx, dy, dpsi, dtheta, dphi, ddefocus, dpixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f | value = %10.6f\n", peak_number + 1, 0.,0.,0.,0.,0.,0.,0., starting_score);
+						goto NEXTPEAK;
+					}
 //					template_reconstruction.CopyFrom(&input_reconstruction);
 //					template_reconstruction.ForwardFFT();
 //					template_reconstruction.ZeroCentralPixel();
@@ -1129,6 +1136,7 @@ bool RefineTemplateApp::DoCalculation()
 				best_pixel_size.real_values[best_address] = best_pixel_size_local.real_values[best_address];
 			}
 		}
+		NEXTPEAK: if (angular_step == 0.0 && in_plane_angular_step == 0.0) wxPrintf("Stopping refinement now\n");
 	}
 
 	windowed_particle.Deallocate();
