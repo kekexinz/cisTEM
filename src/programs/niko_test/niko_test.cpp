@@ -21,7 +21,7 @@ public:
 //	int							slice = 1;
 };
 
-Peak TemplateScore(void *scoring_parameters)
+Peak TemplateScore(void *scoring_parameters, float phi, float theta, float psi)
 {
 	TemplateComparisonObject *comparison_object = reinterpret_cast < TemplateComparisonObject *> (scoring_parameters);
 	Image current_projection;
@@ -86,7 +86,7 @@ Peak TemplateScore(void *scoring_parameters)
 	float peak_location_y = current_projection.physical_address_of_box_center_y;
 	//wxPrintf("peak_location_x=%f\n", peak_location_x);
 	//wxPrintf("peak_location_y=%f\n", peak_location_y);
-
+	// always calculates the cc at the center pixel
 	for ( j = 0; j < current_projection.logical_y_dimension; j ++ )
 	{
 		sq_dist_y = float(pow(j-peak_location_y, 2));
@@ -96,7 +96,7 @@ Peak TemplateScore(void *scoring_parameters)
 			if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)
 			{
 				best_score = current_projection.real_values[address_in_current_projection];
-				wxPrintf("at address %ld cc = %f\n", address_in_current_projection, best_score);
+				wxPrintf("at address %ld, phi = %f, theta = %f, psi = %f, cc = %f\n", address_in_current_projection, phi, theta, psi, best_score);
 			}
 			address_in_current_projection++;
 		}
@@ -355,7 +355,7 @@ bool NikoTestApp::DoCalculation()
 	int size_i;
 	int size_is = 0;
 
-	float current_psi;
+	float current_psi, current_phi, current_theta;
 	float psi_max;
 	float psi_start;
 	float psi_step;
@@ -585,7 +585,7 @@ bool NikoTestApp::DoCalculation()
 		phase_shift, max_threads, xy_change_threshold, exclude_above_xy_threshold, peak_position_x, peak_position_y, last_search_position, first_search_position,\
 		global_euler_search, psi_max, psi_start, psi_step, counter) \
 	private(padded_reference, windowed_particle, sq_dist_x, sq_dist_y, address, template_object, input_ctf, \
-		angles, temp_float, projection_filter, template_peak, i, j, best_address, current_search_position, current_psi, tid)
+		angles, temp_float, projection_filter, template_peak, i, j, best_address, current_search_position, current_psi, current_phi, current_theta, tid)
 {
 
 	input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
@@ -599,7 +599,7 @@ bool NikoTestApp::DoCalculation()
 	template_object.angles = &angles;
 
 	padded_reference.CopyFrom(&input_image);
-	padded_reference.RealSpaceIntegerShift(peak_position_x, peak_position_y); //TODO
+	padded_reference.RealSpaceIntegerShift(peak_position_x, peak_position_y); // here the offset is provided as pixels not A so it doesn't need to multiply pixel_size
 	padded_reference.ClipInto(&windowed_particle);
 //	windowed_particle.QuickAndDirtyWriteSlice("windowed_particle.mrc",1);
 	windowed_particle.ForwardFFT();
@@ -641,7 +641,10 @@ bool NikoTestApp::DoCalculation()
 		for (current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step)
 		{
 			angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
-			template_peak = TemplateScore(&template_object);
+			current_phi = global_euler_search.list_of_search_parameters[current_search_position][0];
+			current_theta = global_euler_search.list_of_search_parameters[current_search_position][1];
+			template_peak = TemplateScore(&template_object, current_phi, current_theta, current_psi);
+
 	//		tid = ReturnThreadNumberOfCurrentThread();
 
 		//current_correlation_position++;
