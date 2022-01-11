@@ -434,7 +434,7 @@ bool NikoTestApp::DoCalculation()
 	Image best_phi, best_phi_local;
 	Image best_defocus, best_defocus_local;
 	Image best_pixel_size, best_pixel_size_local;
-	Image best_mip, best_mip_local;
+	Image best_scaled_mip, best_scaled_mip_local;
 
 	Peak current_peak;
 	Peak template_peak;
@@ -484,7 +484,7 @@ bool NikoTestApp::DoCalculation()
 	defocus_image.ReadSlice(&best_defocus_input_file, result_number);
 	pixel_size_image.ReadSlice(&best_pixel_size_input_file, result_number);
 	padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
-	best_mip.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+	best_scaled_mip.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 	best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -564,14 +564,14 @@ bool NikoTestApp::DoCalculation()
 
 	// if running locally, search over all of them
 
-	best_mip.CopyFrom(&mip_image); // change to mip image
+	best_scaled_mip.CopyFrom(&scaled_mip_image); 
 	current_peak.value = FLT_MAX;
 	wxPrintf("\n");
 	while (current_peak.value >= wanted_threshold)  // find peaks in mip (only one peak actually)
 	{
 		// look for a peak..
 
-		current_peak = best_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, 50);
+		current_peak = best_scaled_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, 50); // get peak in descending order from scaled mip
 		if (current_peak.value < wanted_threshold) break;
 		found_peaks[number_of_peaks_found] = current_peak;
 
@@ -582,22 +582,22 @@ bool NikoTestApp::DoCalculation()
 		float sq_dist_x, sq_dist_y;
 		address = 0;
 
-		current_peak.x = current_peak.x + best_mip.physical_address_of_box_center_x;
-		current_peak.y = current_peak.y + best_mip.physical_address_of_box_center_y;
+		current_peak.x = current_peak.x + best_scaled_mip.physical_address_of_box_center_x;
+		current_peak.y = current_peak.y + best_scaled_mip.physical_address_of_box_center_y;
 
 //		wxPrintf("Peak = %f, %f, %f : %f\n", current_peak.x, current_peak.y, current_peak.value);
 
-		for ( j = 0; j < best_mip.logical_y_dimension; j ++ )
+		for ( j = 0; j < best_scaled_mip.logical_y_dimension; j ++ )
 		{
 			sq_dist_y = float(pow(j-current_peak.y, 2));
-			for ( i = 0; i < best_mip.logical_x_dimension; i ++ )
+			for ( i = 0; i < best_scaled_mip.logical_x_dimension; i ++ )
 			{
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
 				// The square centered at the pixel
 				if ( sq_dist_x + sq_dist_y <= pow(min_peak_radius,2) ) // Kexin: this is not radius?
 				{
-					best_mip.real_values[address] = -FLT_MAX;
+					best_scaled_mip.real_values[address] = -FLT_MAX;
 				}
 
 				if (sq_dist_x == 0.0f && sq_dist_y == 0.0f)
@@ -612,7 +612,7 @@ bool NikoTestApp::DoCalculation()
 
 				address++;
 			}
-			address += best_mip.padding_jump_value;
+			address += best_scaled_mip.padding_jump_value;
 		}
 
 		number_of_peaks_found++;
@@ -637,7 +637,7 @@ bool NikoTestApp::DoCalculation()
 //		my_progress = new ProgressBar(total_correlation_positions);
 	}
 
-	best_mip.SetToConstant(0.0f);
+	best_scaled_mip.SetToConstant(0.0f);
 	best_psi.CopyFrom(&psi_image);
 	best_theta.CopyFrom(&theta_image);
 	best_phi.CopyFrom(&phi_image);
@@ -663,9 +663,10 @@ bool NikoTestApp::DoCalculation()
 	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
 
 	current_peak.value = FLT_MAX;
-	best_mip_local.Allocate(mip_image.logical_x_dimension, mip_image.logical_y_dimension, true);
-	best_mip_local.SetToConstant(0.0f);
+	best_scaled_mip_local.Allocate(scaled_mip_image.logical_x_dimension, scaled_mip_image.logical_y_dimension, true);
+	best_scaled_mip_local.SetToConstant(0.0f);
 	mip_image_local.CopyFrom(&mip_image);
+	scaled_mip_image_local.CopyFrom(&scaled_mip_image);
 	best_psi_local.CopyFrom(&psi_image);
 	best_theta_local.CopyFrom(&theta_image);
 	best_phi_local.CopyFrom(&phi_image);
@@ -681,8 +682,10 @@ bool NikoTestApp::DoCalculation()
 	{
 		current_peak = found_peaks[peak_number];
 
+		template_object.input_reconstruction = &input_reconstruction; // set back to full length template
+
 		padded_reference.CopyFrom(&input_image);
-		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y); // move to the position of the peak
+		padded_reference.RealSpaceIntegerShift(current_peak.x, current_peak.y); // move to the position of the peak; relative to the center of the bounding box;
 		padded_reference.ClipInto(&windowed_particle);
 		if (mask_radius > 0.0f) windowed_particle.CosineMask(mask_radius / pixel_size, mask_falloff / pixel_size); // check output here, see if it was correctly masked
 		windowed_particle.ForwardFFT();
@@ -693,15 +696,14 @@ bool NikoTestApp::DoCalculation()
 		// get angles and mask out the local area so it won't be picked again..
 
 		address = 0;
-
-		current_peak.x = current_peak.x + mip_image_local.physical_address_of_box_center_x;
-		current_peak.y = current_peak.y + mip_image_local.physical_address_of_box_center_y;
+		current_peak.x = current_peak.x + scaled_mip_image_local.physical_address_of_box_center_x; // convert to regular x and y positions
+		current_peak.y = current_peak.y + scaled_mip_image_local.physical_address_of_box_center_y;
 
 		wxPrintf("Peak = %f, %f: %f\n", current_peak.x, current_peak.y, current_peak.value); // check if it is from raw mip
-		for ( j = 0; j < mip_image_local.logical_y_dimension; j ++ )
+		for ( j = 0; j < scaled_mip_image_local.logical_y_dimension; j ++ )
 		{
 			sq_dist_y = float(pow(j-current_peak.y, 2));
-			for ( i = 0; i < mip_image_local.logical_x_dimension; i ++ )
+			for ( i = 0; i < scaled_mip_image_local.logical_x_dimension; i ++ )
 			{
 				sq_dist_x = float(pow(i-current_peak.x,2));
 
@@ -766,7 +768,7 @@ bool NikoTestApp::DoCalculation()
 				}
 				address++;
 			}
-			address += best_mip.padding_jump_value;
+			address += best_scaled_mip.padding_jump_value;
 					// for aaMOSAICS, there is no need to re-calculate peaks (peak height ratio == cc ratio == SNR ratio?)
 
 	}
