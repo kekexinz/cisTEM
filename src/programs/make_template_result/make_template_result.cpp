@@ -31,7 +31,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	wxString    output_slab_filename;
 	wxString    xyz_coords_filename;
 
-	float wanted_threshold;
+	float wanted_high_threshold;
+	float wanted_low_threshold;
 	float min_peak_radius;
 	float slab_thickness;
 	float pixel_size;
@@ -54,7 +55,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 		input_best_defocus_filename = my_input->GetFilenameFromUser("Input defocus file", "The file with the best defocus image", "defocus.mrc", true);
 		input_best_pixel_size_filename = my_input->GetFilenameFromUser("Input pixel size file", "The file with the best pixel size image", "pixel_size.mrc", true);
 		xyz_coords_filename = my_input->GetFilenameFromUser("Output x,y,z coordinate file", "The file for saving the x,y,z coordinates of the found targets", "coordinates.txt", false);
-		wanted_threshold = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
+		wanted_high_threshold = my_input->GetFloatFromUser("Peak threshold (high)", "Peaks over this size will be taken", "7.5", 0.0);
+		wanted_low_threshold = my_input->GetFloatFromUser("Peak threshold (low)", "Peaks over this size will be taken", "7.5", 0.0);
 		min_peak_radius = my_input->GetFloatFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 1.0);
 		result_number = my_input->GetIntFromUser("Result number to process", "If input files contain results from several searches, which one should be used?", "1", 1);
 	}
@@ -76,7 +78,7 @@ void MakeTemplateResult::DoInteractiveUserInput()
 	delete my_input;
 
 //	my_current_job.Reset(14);
-	my_current_job.ManualSetArguments("ttttttttttfffffbiiii",	input_reconstruction_filename.ToUTF8().data(),
+	my_current_job.ManualSetArguments("ttttttttttffffffbiiii",	input_reconstruction_filename.ToUTF8().data(),
 													input_mip_filename.ToUTF8().data(),
 													input_best_psi_filename.ToUTF8().data(),
 													input_best_theta_filename.ToUTF8().data(),
@@ -86,7 +88,8 @@ void MakeTemplateResult::DoInteractiveUserInput()
 													output_result_image_filename.ToUTF8().data(),
 													output_slab_filename.ToUTF8().data(),
 													xyz_coords_filename.ToUTF8().data(),
-													wanted_threshold,
+													wanted_high_threshold,
+													wanted_low_threshold,
 													min_peak_radius,
 													slab_thickness,
 													pixel_size, binning_factor,
@@ -113,16 +116,17 @@ bool MakeTemplateResult::DoCalculation()
 	wxString	output_result_image_filename = my_current_job.arguments[7].ReturnStringArgument();
 	wxString	output_slab_filename = my_current_job.arguments[8].ReturnStringArgument();
 	wxString	xyz_coords_filename = my_current_job.arguments[9].ReturnStringArgument();
-	float		wanted_threshold = my_current_job.arguments[10].ReturnFloatArgument();
-	float		min_peak_radius = my_current_job.arguments[11].ReturnFloatArgument();
-	float		slab_thickness = my_current_job.arguments[12].ReturnFloatArgument();
-	float		pixel_size = my_current_job.arguments[13].ReturnFloatArgument();
-	float		binning_factor = my_current_job.arguments[14].ReturnFloatArgument();
-	bool	 	read_coordinates = my_current_job.arguments[15].ReturnBoolArgument();
-	int 		mip_x_dimension = my_current_job.arguments[16].ReturnIntegerArgument();
-	int 		mip_y_dimension = my_current_job.arguments[17].ReturnIntegerArgument();
-	int 		result_number = my_current_job.arguments[18].ReturnIntegerArgument();
-	int 		ignore_N_pixels_from_the_border = my_current_job.arguments[19].ReturnIntegerArgument();
+	float		wanted_high_threshold = my_current_job.arguments[10].ReturnFloatArgument();
+	float		wanted_low_threshold = my_current_job.arguments[11].ReturnFloatArgument();
+	float		min_peak_radius = my_current_job.arguments[12].ReturnFloatArgument();
+	float		slab_thickness = my_current_job.arguments[13].ReturnFloatArgument();
+	float		pixel_size = my_current_job.arguments[14].ReturnFloatArgument();
+	float		binning_factor = my_current_job.arguments[15].ReturnFloatArgument();
+	bool	 	read_coordinates = my_current_job.arguments[16].ReturnBoolArgument();
+	int 		mip_x_dimension = my_current_job.arguments[17].ReturnIntegerArgument();
+	int 		mip_y_dimension = my_current_job.arguments[18].ReturnIntegerArgument();
+	int 		result_number = my_current_job.arguments[19].ReturnIntegerArgument();
+	int 		ignore_N_pixels_from_the_border = my_current_job.arguments[20].ReturnIntegerArgument();
 
 	float padding = 2.0f;
 
@@ -249,11 +253,12 @@ bool MakeTemplateResult::DoCalculation()
 			// look for a peak..
 
 			current_peak = mip_image.FindPeakWithIntegerCoordinates(0.0, FLT_MAX, ignore_N_pixels_from_the_border);
-			if (current_peak.value < wanted_threshold) break;
+			wxPrintf("peak height = %f\n", current_peak.value);
+			if (current_peak.value < wanted_low_threshold) break;
+
 
 			// ok we have peak..
-
-			number_of_peaks_found++;
+			if (current_peak.value <= wanted_high_threshold) number_of_peaks_found++;
 
 			// get angles and mask out the local area so it won't be picked again..
 
@@ -290,6 +295,9 @@ bool MakeTemplateResult::DoCalculation()
 				}
 				address += mip_image.padding_jump_value;
 			}
+			
+			if (current_peak.value <= wanted_high_threshold)
+			{	
 			coordinates[0] = current_psi;
 			coordinates[1] = current_theta;
 			coordinates[2] = current_phi;
@@ -301,6 +309,7 @@ bool MakeTemplateResult::DoCalculation()
 			coordinates[6] = current_pixel_size;
 			coordinates[7] = current_peak.value;
 			coordinate_file.WriteLine(coordinates);
+			}
 		}
 		else
 		{
@@ -315,41 +324,43 @@ bool MakeTemplateResult::DoCalculation()
 			current_pixel_size = coordinates[6];
 			current_peak.value = coordinates[7];
 		}
-
-		wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
-
-			// ok get a projection
-
-		angles.Init(current_phi, current_theta, current_psi, 0.0, 0.0);
-
-		if (padding != 1.0f)
+		if (current_peak.value <= wanted_high_threshold) 
 		{
-			input_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
-			padded_projection.SwapRealSpaceQuadrants();
-			padded_projection.BackwardFFT();
-			padded_projection.ClipInto(&current_projection);
-			current_projection.ForwardFFT();
+			wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
+
+				// ok get a projection
+
+			angles.Init(current_phi, current_theta, current_psi, 0.0, 0.0);
+
+			if (padding != 1.0f)
+			{
+				input_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
+				padded_projection.SwapRealSpaceQuadrants();
+				padded_projection.BackwardFFT();
+				padded_projection.ClipInto(&current_projection);
+				current_projection.ForwardFFT();
+			}
+			else
+			{
+				input_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
+				current_projection.SwapRealSpaceQuadrants();
+			}
+
+			angles.Init(-current_psi, -current_theta, -current_phi, 0.0, 0.0);
+			rotated_reconstruction.CopyFrom(&binned_reconstruction);
+			rotated_reconstruction.Rotate3DByRotationMatrixAndOrApplySymmetry(angles.euler_matrix);
+
+			current_projection.MultiplyByConstant(sqrtf(current_projection.logical_x_dimension * current_projection.logical_y_dimension));
+			current_projection.BackwardFFT();
+			current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
+
+			// insert it into the output image
+
+			output_image.InsertOtherImageAtSpecifiedPosition(&current_projection, current_peak.x - output_image.physical_address_of_box_center_x, current_peak.y - output_image.physical_address_of_box_center_y, 0, 0.0f);
+			slab.InsertOtherImageAtSpecifiedPosition(&rotated_reconstruction, myroundint((current_peak.x - output_image.physical_address_of_box_center_x) / binning_factor), myroundint((current_peak.y - output_image.physical_address_of_box_center_y) / binning_factor), - myroundint(current_defocus / binned_pixel_size), 0.0f);
+
+			if (read_coordinates && coordinate_file.number_of_lines == number_of_peaks_found) break;
 		}
-		else
-		{
-			input_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
-			current_projection.SwapRealSpaceQuadrants();
-		}
-
-		angles.Init(-current_psi, -current_theta, -current_phi, 0.0, 0.0);
-		rotated_reconstruction.CopyFrom(&binned_reconstruction);
-		rotated_reconstruction.Rotate3DByRotationMatrixAndOrApplySymmetry(angles.euler_matrix);
-
-		current_projection.MultiplyByConstant(sqrtf(current_projection.logical_x_dimension * current_projection.logical_y_dimension));
-		current_projection.BackwardFFT();
-		current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges());
-
-		// insert it into the output image
-
-		output_image.InsertOtherImageAtSpecifiedPosition(&current_projection, current_peak.x - output_image.physical_address_of_box_center_x, current_peak.y - output_image.physical_address_of_box_center_y, 0, 0.0f);
-		slab.InsertOtherImageAtSpecifiedPosition(&rotated_reconstruction, myroundint((current_peak.x - output_image.physical_address_of_box_center_x) / binning_factor), myroundint((current_peak.y - output_image.physical_address_of_box_center_y) / binning_factor), - myroundint(current_defocus / binned_pixel_size), 0.0f);
-
-		if (read_coordinates && coordinate_file.number_of_lines == number_of_peaks_found) break;
 	}
 
 	// save the output image
