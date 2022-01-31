@@ -77,7 +77,7 @@ bool ExtractParticlesApp::DoCalculation()
 	input_coos_file = new NumericTextFile(coordinates_filename, OPEN_TO_READ, 3);
 	int number_of_particles = input_coos_file->number_of_lines;
 	MRCFile output_stack;
-	//output_stack.OpenFile(output_stack_filename.ToStdString(),true);
+	output_stack.OpenFile(output_stack_filename.ToStdString(),true);
 	my_progress_bar = new ProgressBar(number_of_particles);
 	float plt_x, plt_y;
 	int my_x, my_y;
@@ -108,9 +108,9 @@ bool ExtractParticlesApp::DoCalculation()
 		micrograph_copy.RealSpaceIntegerShift(plt_x-micrograph.physical_address_of_box_center_x, plt_y-micrograph.physical_address_of_box_center_y);
 		micrograph_copy.ClipInto(&box);
 		//micrograph.ClipInto(&box,micrograph_mean,false,1.0,-int(plt_x-micrograph.physical_address_of_box_center_x),-int(plt_y-micrograph.physical_address_of_box_center_y),0);
-		//box.WriteSlice(&output_stack , counter + 1);
+		box.WriteSlice(&output_stack , counter + 1);
 
-		box.QuickAndDirtyWriteSlice(wxString::Format("/groups/kexin/research/scaling_mip/normality_test/real_image_147/windowed_peak_%i.mrc", counter).ToStdString(),1);
+		//box.QuickAndDirtyWriteSlice(wxString::Format("/groups/kexin/research/scaling_mip/normality_test/real_image_147/windowed_peak_%i.mrc", counter).ToStdString(),1);
 
 		my_progress_bar->Update(counter+1);
 	}
