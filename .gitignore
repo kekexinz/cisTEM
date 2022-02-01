@@ -27,3 +27,7 @@ RemoteSystemsTempFiles
 /release_build/
 **/build*
 **/.DS_Store
+*.o
+*stamp
+*.deps/
+*.dff
