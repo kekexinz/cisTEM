@@ -22,6 +22,9 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     wxString correlation_avg_output_file;
     wxString correlation_std_output_file;
     wxString output_mip_file;
+    wxString output_scaled_mip_file;
+    wxString output_max_file;
+    wxString output_name_prefix;
 
     float pixel_size              = 1.0f;
     float voltage_kV              = 300.0f;
@@ -44,27 +47,31 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     float    particle_radius_angstroms = 0.0f;
     wxString my_symmetry               = "C1";
     float    in_plane_angular_step     = 0;
-    int      max_threads               = 1; // Only used for the GPU code
+    int      max_threads               = 1;
 
-    bool  do_constrained_search   = false;
-    float phi_start               = 0.0;
-    float phi_max                 = 360.0;
-    float theta_start             = 0.0;
-    float theta_max               = 180.0;
-    float psi_start               = 0.0;
-    float psi_max                 = 360.0;
-    bool  do_phase_matched_filter = false;
-    int   whitening_option        = 1;
-    bool  do_whiten_image         = true;
+    bool  do_constrained_search     = false;
+    float phi_start                 = 0.0;
+    float phi_max                   = 360.0;
+    float theta_start               = 0.0;
+    float theta_max                 = 180.0;
+    float psi_start                 = 0.0;
+    float psi_max                   = 360.0;
+    bool  do_phase_matched_filter   = false;
+    int   whitening_option          = 1;
+    bool  do_whiten_image           = true;
+    int   do_extract_phase_image    = 1;
+    int   do_extract_phase_template = 1;
 
     UserInput* my_input = new UserInput("PhaseMatchedFilter", 1.00);
 
     input_search_images   = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
     input_reconstruction  = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
     output_histogram_file = my_input->GetFilenameFromUser("Output histogram of correlation values", "histogram of all correlation values", "histogram.txt", false);
-    output_mip_file       = my_input->GetFilenameFromUser("Output mip", "mip", "mip.mrc", false);
+    //output_mip_file             = my_input->GetFilenameFromUser("Output mip", "mip", "mip.mrc", false);
+    //output_scaled_mip_file      = my_input->GetFilenameFromUser("Output scaled mip", "scaled mip", "scaled_mip.mrc", false);
     //correlation_avg_output_file = my_input->GetFilenameFromUser("Correlation average value", "The file for saving the average value of all correlation images", "corr_average.mrc", false);
     //correlation_std_output_file = my_input->GetFilenameFromUser("Correlation standard deviation value", "The file for saving the std value of all correlation images", "corr_variance.mrc", false);
+    output_name_prefix      = my_input->GetFilenameFromUser("output name prefix (e.g. clathrin_particle_25_noise_snr0.01_wii_wri_fi_fr)", "output name prefix", "clathrin_simulation/clathrin_particle_25_with_noise_snr0.001_20deg_wii_wri_fi_pr_", false);
     pixel_size              = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
     voltage_kV              = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
     spherical_aberration_mm = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7");
@@ -73,11 +80,10 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     defocus2                = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
     defocus_angle           = my_input->GetFloatFromUser("Defocus Angle (degrees)", "Defocus Angle for the input image", "0.0");
     phase_shift             = my_input->GetFloatFromUser("Phase Shift (degrees)", "Additional phase shift in degrees", "0.0");
-    //    low_resolution_limit = my_input->GetFloatFromUser("Low resolution limit (A)", "Low resolution limit of the data used for alignment in Angstroms", "300.0", 0.0);
-    high_resolution_limit = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
-    angular_step          = my_input->GetFloatFromUser("Out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
-    in_plane_angular_step = my_input->GetFloatFromUser("In plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
-    do_constrained_search = my_input->GetYesNoFromUser("Perform constraied angular search", "yes no", "no");
+    high_resolution_limit   = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
+    angular_step            = my_input->GetFloatFromUser("Out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
+    in_plane_angular_step   = my_input->GetFloatFromUser("In plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+    do_constrained_search   = my_input->GetYesNoFromUser("Perform constraied angular search", "yes no", "no");
     if ( do_constrained_search ) {
         phi_max     = my_input->GetFloatFromUser("Constrained search Phi max", "max phi for constrained search", "360.0", 0.0, 360.0);
         phi_start   = my_input->GetFloatFromUser("Constrained search Phi min", "min phi for constrained search", "0.0", 0.0, 360.0);
@@ -96,8 +102,16 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     particle_radius_angstroms = my_input->GetFloatFromUser("Mask radius for global search (A) (0.0 = max)", "Radius of a circular mask to be applied to the input images during global search", "0.0", 0.0);
     my_symmetry               = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
     do_phase_matched_filter   = my_input->GetYesNoFromUser("Perform phase-only matched filter in cc calculation", "yes no", "no");
-    whitening_option          = my_input->GetIntFromUser("How to whiten ref? (1: by img  2: by self  3: no whitening)", "1: by img  2: by self  3: no whitening", "1", 1);
+    whitening_option          = my_input->GetIntFromUser("How to whiten ref? (1: by img  2: by self  3: no whitening)", "1: by img  2: by self  3: no whitening", "1", 1, 3);
     do_whiten_image           = my_input->GetYesNoFromUser("Whiten image?", "yes no", "yes");
+    do_extract_phase_image    = my_input->GetIntFromUser("Extract phase or amplitude component from image? (1: full  2: amplitude  3: phase)", "1: full  2: amplitude  3: phase", "1", 1, 3);
+    do_extract_phase_template = my_input->GetIntFromUser("Extract phase or amplitude component from template? (1: full  2: amplitude  3: phase)", "1: full  2: amplitude  3: phase", "1", 1, 3);
+
+#ifdef _OPENMP
+    max_threads = my_input->GetIntFromUser("Max. threads to use for calculation", "When threading, what is the max threads to run", "1", 1);
+#else
+    max_threads = 1;
+#endif
 
     int   first_search_position = -1;
     int   last_search_position  = -1;
@@ -105,7 +119,7 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbffffffffftbib", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbfffffffffbibiiti", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -141,12 +155,18 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
                                       fixed_phi,
                                       fixed_theta,
                                       fixed_psi,
-                                      output_mip_file.ToUTF8( ).data( ),
+                                      //output_mip_file.ToUTF8( ).data( ),
                                       do_phase_matched_filter,
                                       whitening_option,
-                                      do_whiten_image
+                                      do_whiten_image,
+                                      do_extract_phase_image,
+                                      do_extract_phase_template,
+                                      output_name_prefix.ToUTF8( ).data( ),
+                                      //output_max_file.ToUTF8( ).data( ),
+                                      //output_scaled_mip_file.ToUTF8( ).data( ),
                                       //correlation_avg_output_file.ToUTF8( ).data( ),
                                       //correlation_std_output_file.ToUTF8( ).data( )
+                                      max_threads
 
     );
 }
@@ -190,13 +210,19 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     float    fixed_phi                     = my_current_job.arguments[33].ReturnFloatArgument( );
     float    fixed_theta                   = my_current_job.arguments[34].ReturnFloatArgument( );
     float    fixed_psi                     = my_current_job.arguments[35].ReturnFloatArgument( );
-    wxString output_mip_file               = my_current_job.arguments[36].ReturnStringArgument( );
-    bool     do_phase_matched_filter       = my_current_job.arguments[37].ReturnBoolArgument( );
-    int      whitening_option              = my_current_job.arguments[38].ReturnIntegerArgument( );
-    bool     do_whiten_image               = my_current_job.arguments[39].ReturnBoolArgument( );
+    //  wxString output_mip_file               = my_current_job.arguments[36].ReturnStringArgument( );
+    bool     do_phase_matched_filter   = my_current_job.arguments[36].ReturnBoolArgument( );
+    int      whitening_option          = my_current_job.arguments[37].ReturnIntegerArgument( );
+    bool     do_whiten_image           = my_current_job.arguments[38].ReturnBoolArgument( );
+    int      do_extract_phase_image    = my_current_job.arguments[39].ReturnIntegerArgument( );
+    int      do_extract_phase_template = my_current_job.arguments[40].ReturnIntegerArgument( );
+    wxString output_name_prefix        = my_current_job.arguments[41].ReturnStringArgument( );
+    int      max_threads               = my_current_job.arguments[42].ReturnIntegerArgument( );
 
-    //wxString correlation_avg_output_file   = my_current_job.arguments[29].ReturnStringArgument( );
-    //wxString correlation_std_output_file   = my_current_job.arguments[30].ReturnStringArgument( );
+    // wxString output_max_file               = my_current_job.arguments[42].ReturnStringArgument( );
+    //  wxString output_scaled_mip_file      = my_current_job.arguments[42].ReturnStringArgument( );
+    //  wxString correlation_avg_output_file = my_current_job.arguments[43].ReturnStringArgument( );
+    //  wxString correlation_std_output_file = my_current_job.arguments[44].ReturnStringArgument( );
 
     // read in image file (with particle in the center, no randomness in x, y, z, defocus1, defocus2, defocus angle when simulating particles)
     // read in 3d template
@@ -217,14 +243,21 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     Image correlation_pixel_sum_image;
     Image correlation_pixel_sum_of_squares_image;
 
+    Image best_psi;
+    Image best_theta;
+    Image best_phi;
+
     input_image.ReadSlice(&input_search_image_file, 1);
     input_reconstruction.ReadSlices(&input_reconstruction_file, 1, input_reconstruction_file.ReturnNumberOfSlices( ));
     template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
-    current_projection.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
+    // current_projection.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
     projection_filter.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
-    padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    // padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     padded_reference.SetToConstant(0.0f);
     max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
 
     correlation_pixel_sum_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     correlation_pixel_sum_of_squares_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -233,9 +266,9 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
 
     padded_reference.SetToConstant(0.0f);
     max_intensity_projection.SetToConstant(-FLT_MAX);
-    //best_psi.SetToConstant(0.0f);
-    //best_theta.SetToConstant(0.0f);
-    //best_phi.SetToConstant(0.0f);
+    best_psi.SetToConstant(0.0f);
+    best_theta.SetToConstant(0.0f);
+    best_phi.SetToConstant(0.0f);
     //best_defocus.SetToConstant(0.0f);
 
     ZeroDoubleArray(correlation_pixel_sum, input_image.real_memory_allocated);
@@ -272,6 +305,10 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     }
 
     // preprocess (whitening, normalization)
+    float amplitude;
+    long  pixel_counter;
+    Image temp_image;
+
     Curve whitening_filter_ref, whitening_filter_img;
     Curve number_of_terms_ref, number_of_terms_img;
     whitening_filter_img.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
@@ -291,11 +328,28 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     //whitening_filter_img.WriteToFile("w_filter_img.txt");
     if ( do_whiten_image ) {
         input_image.ApplyCurveFilter(&whitening_filter_img);
-        input_image.ZeroCentralPixel( );
-        input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     }
-    else
-        input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
+
+    if ( do_extract_phase_image == 3 ) {
+        for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated / 2; pixel_counter++ ) {
+            amplitude = abs(input_image.complex_values[pixel_counter]);
+            if ( amplitude == 0.0f )
+                amplitude = 0.000001f;
+            input_image.complex_values[pixel_counter] /= amplitude;
+        }
+    }
+    else if ( do_extract_phase_image == 2 ) {
+        temp_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+        input_image.ComputeAmplitudeSpectrumFull2D(&temp_image);
+        input_image.CopyFrom(&temp_image);
+        temp_image.Deallocate( );
+        input_image.ForwardFFT( );
+        input_image.SwapRealSpaceQuadrants( );
+    }
+
+    input_image.ZeroCentralPixel( );
+    input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
+
     // set up CTF
     CTF input_ctf;
     input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
@@ -317,7 +371,6 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     long  total_correlation_positions;
     long  current_correlation_position;
     long  total_correlation_positions_per_thread;
-    long  pixel_counter;
 
     int current_search_position;
     int current_x;
@@ -383,132 +436,163 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     wxPrintf("Performing Search...\n\n");
 
     // start rotational search
-    for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
-        for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
-            angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
-            //angles.Init(fixed_phi, fixed_theta, fixed_psi, 0.0, 0.0); // 91 clathrin
-            //angles.Init(-132.69, 134.20, 181.39, 0, 0); // 1 mature60S
+    // openmp
+#pragma omp parallel num_threads(max_threads) default(shared) private(current_search_position, angles, current_psi, variance, pixel_counter, current_x, current_y, current_projection, padded_projection, whitening_filter_ref, number_of_terms_ref, amplitude, temp_image, padded_reference)
+    {
+        for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
+            for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
+                current_projection.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
+                angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+                //angles.Init(fixed_phi, fixed_theta, fixed_psi, 0.0, 0.0); // 91 clathrin
+                //angles.Init(-132.69, 134.20, 181.39, 0, 0); // 1 mature60S
+                wxPrintf("%i %i %i\n", padded_projection.logical_x_dimension, padded_projection.logical_y_dimension, padded_projection.logical_z_dimension);
+                if ( padding != 1.0f ) {
+                    template_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
+                    padded_projection.SwapRealSpaceQuadrants( );
+                    padded_projection.BackwardFFT( );
+                    padded_projection.ClipInto(&current_projection);
+                    current_projection.ForwardFFT( );
+                }
+                else {
+                    template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
+                    current_projection.SwapRealSpaceQuadrants( );
+                }
 
-            if ( padding != 1.0f ) {
-                template_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
-                padded_projection.SwapRealSpaceQuadrants( );
-                padded_projection.BackwardFFT( );
-                padded_projection.ClipInto(&current_projection);
-                current_projection.ForwardFFT( );
-            }
-            else {
-                template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
-                current_projection.SwapRealSpaceQuadrants( );
-            }
+                current_projection.MultiplyPixelWise(projection_filter); // only the ctf
 
-            current_projection.MultiplyPixelWise(projection_filter); // only the ctf
+                if ( whitening_option == 2 ) {
+                    //  current_projection.QuickAndDirtyWriteSlice("full.mrc", 1);
+                    current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_ref, &number_of_terms_ref);
+                    whitening_filter_ref.SquareRoot( );
+                    whitening_filter_ref.Reciprocal( );
+                    whitening_filter_ref.MultiplyByConstant(1.0f / whitening_filter_ref.ReturnMaximumValue( ));
+                    //whitening_filter_ref.WriteToFile("w_filter_ref.txt");
 
-            if ( whitening_option == 2 ) {
-                ///*
-                // apply ref's own whitening filter
-                current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_ref, &number_of_terms_ref);
-                whitening_filter_ref.SquareRoot( );
-                whitening_filter_ref.Reciprocal( );
-                whitening_filter_ref.MultiplyByConstant(1.0f / whitening_filter_ref.ReturnMaximumValue( ));
-                //whitening_filter_ref.WriteToFile("w_filter_ref.txt");
+                    // Image amplitude_spectrum;
+                    // amplitude_spectrum.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
+                    // current_projection.ComputeAmplitudeSpectrumFull2D(&amplitude_spectrum);
+                    current_projection.ApplyCurveFilter(&whitening_filter_ref);
+                    // current_projection.QuickAndDirtyWriteSlice("phase.mrc", 1);
+                    // amplitude_spectrum.QuickAndDirtyWriteSlice("amplitude.mrc", 1);
+                    //current_projection.ZeroCentralPixel( );
+                    //current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares( )));
+                }
+                if ( do_extract_phase_template == 3 ) {
+                    //temp_image.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
+                    //current_projection.ComputePhaseSpectrumFull2D(&temp_image);
+                    // temp_image.QuickAndDirtyWriteSlice("template_phase1.mrc", 1);
+                    for ( pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter++ ) {
+                        amplitude = abs(current_projection.complex_values[pixel_counter]);
+                        //wxPrintf("amplitude of template = %f\n", amplitude);
 
-                current_projection.ApplyCurveFilter(&whitening_filter_ref);
-                current_projection.ZeroCentralPixel( );
-                current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares( )));
-                //*/
-            }
+                        if ( amplitude == 0.0f )
+                            amplitude = 0.000001f;
+                        //amp_file.WriteLine(temp_double);
 
-            current_projection.BackwardFFT( );
+                        current_projection.complex_values[pixel_counter] /= amplitude;
+                    }
+                }
+                else if ( do_extract_phase_template == 2 ) {
+                    temp_image.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
+                    current_projection.ComputeAmplitudeSpectrumFull2D(&temp_image);
+                    current_projection.CopyFrom(&temp_image);
+                    current_projection.ForwardFFT( );
+                }
 
-            current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges( ));
-            variance = current_projection.ReturnSumOfSquares( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels - powf(current_projection.ReturnAverageOfRealValues( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
-            current_projection.DivideByConstant(sqrtf(variance));
-            current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
+                current_projection.BackwardFFT( );
 
-            padded_reference.ForwardFFT( );
-            padded_reference.ZeroCentralPixel( );
+                current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges( ));
+                variance = current_projection.ReturnSumOfSquares( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels - powf(current_projection.ReturnAverageOfRealValues( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
+                current_projection.DivideByConstant(sqrtf(variance));
+                current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 
-            //#ifdef MKL
-            // Use the MKL
-            //vmcMulByConj(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(input_image.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
-            //#else
-            //NumericTextFile amp_file("amplitude.txt", OPEN_TO_WRITE, 1);
+                padded_reference.ForwardFFT( );
+                padded_reference.ZeroCentralPixel( );
 
-            //amp_file.WriteCommentLine("amplitude");
-            //double temp_double[1];
+                //#ifdef MKL
+                // Use the MKL
+                //vmcMulByConj(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(input_image.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+                //#else
+                //NumericTextFile amp_file("amplitude.txt", OPEN_TO_WRITE, 1);
 
-            for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
-                padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
-            }
+                //amp_file.WriteCommentLine("amplitude");
+                //double temp_double[1];
 
-            if ( do_phase_matched_filter ) {
                 for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
-                    float amplitude = abs(padded_reference.complex_values[pixel_counter]);
-
-                    if ( amplitude == 0.0f )
-                        amplitude = 1.0; //0.000001f;
-                    //amp_file.WriteLine(temp_double);
-
-                    padded_reference.complex_values[pixel_counter] /= amplitude;
-                }
-            }
-
-            //amp_file.Close( );
-            //#endif
-
-            padded_reference.BackwardFFT( );
-            //padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-            //exit(0);
-
-            // update mip, and histogram..
-            pixel_counter = 0;
-
-            for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
-                for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
-                    // first mip
-
-                    if ( padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
-                        max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
-                        //best_psi.real_values[pixel_counter]                 = current_psi;
-                        //best_theta.real_values[pixel_counter]               = global_euler_search.list_of_search_parameters[current_search_position][1];
-                        //best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
-                        //best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
-                        //best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
-                    }
-
-                    // histogram
-
-                    current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min_scaled) / histogram_step_scaled);
-
-                    if ( current_bin >= 0 && current_bin <= histogram_number_of_points ) {
-                        histogram_data[current_bin] += 1;
-                    }
-
-                    pixel_counter++;
+                    padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
                 }
 
-                pixel_counter += padded_reference.padding_jump_value;
-            }
+                if ( do_phase_matched_filter ) {
+                    for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
+                        amplitude = sqrt(abs(padded_reference.complex_values[pixel_counter]));
+                        // wxPrintf("amplitude of cc = %f\n", amplitude);
 
-            /*
-            for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
-                correlation_pixel_sum[pixel_counter] += padded_reference.real_values[pixel_counter];
-            }
-            padded_reference.SquareRealValues( );
-            for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
-                correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
-            }
-			*/
-            current_projection.is_in_real_space = false;
-            padded_reference.is_in_real_space   = true;
+                        if ( amplitude == 0.0f )
+                            amplitude = 0.000001f;
+                        //amp_file.WriteLine(temp_double);
 
-            current_correlation_position++;
-            if ( is_running_locally == true )
-                my_progress->Update(current_correlation_position);
+                        padded_reference.complex_values[pixel_counter] /= amplitude;
+                    }
+                }
 
-        } // end of IP search
-    } // end of OOP search
+                //amp_file.Close( );
+                //#endif
 
+                padded_reference.BackwardFFT( );
+                //padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
+                //exit(0);
+
+                // update mip, and histogram..
+#pragma omp critical
+                {
+                    pixel_counter = 0;
+
+                    for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
+                        for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
+                            // first mip
+
+                            if ( padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
+                                max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
+                                best_psi.real_values[pixel_counter]                 = current_psi;
+                                best_theta.real_values[pixel_counter]               = global_euler_search.list_of_search_parameters[current_search_position][1];
+                                best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
+                                //best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
+                                //best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
+                            }
+
+                            // histogram
+
+                            current_bin = int(double((padded_reference.real_values[pixel_counter]) - histogram_min_scaled) / histogram_step_scaled);
+
+                            if ( current_bin >= 0 && current_bin <= histogram_number_of_points ) {
+                                histogram_data[current_bin] += 1;
+                            }
+
+                            pixel_counter++;
+                        }
+
+                        pixel_counter += padded_reference.padding_jump_value;
+                    }
+
+                    for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
+                        correlation_pixel_sum[pixel_counter] += padded_reference.real_values[pixel_counter];
+                    }
+                    padded_reference.SquareRealValues( );
+                    for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
+                        correlation_pixel_sum_of_squares[pixel_counter] += padded_reference.real_values[pixel_counter];
+                    }
+
+                    current_projection.is_in_real_space = false;
+                    padded_reference.is_in_real_space   = true;
+
+                    current_correlation_position++;
+                    if ( is_running_locally == true )
+                        my_progress->Update(current_correlation_position);
+                } // end of critical block
+            } // end of IP search
+        } // end of OOP search
+    } // end of omp block
+    /*
     // manually add in correct orientation
     current_projection.is_in_real_space = false;
     padded_reference.is_in_real_space   = true;
@@ -528,7 +612,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     current_projection.MultiplyPixelWise(projection_filter);
 
     if ( whitening_option == 2 ) {
-        ///*
+        //
         // apply ref's own whitening filter
         current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_ref, &number_of_terms_ref);
         whitening_filter_ref.SquareRoot( );
@@ -539,60 +623,111 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
         current_projection.ApplyCurveFilter(&whitening_filter_ref);
         current_projection.ZeroCentralPixel( );
         current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares( )));
-        //*/
+        //
+}
+
+if ( do_extract_phase_template ) {
+    for ( pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter++ ) {
+        float amplitude = abs(current_projection.complex_values[pixel_counter]);
+
+        if ( amplitude == 0.0f )
+            amplitude = 0.000001f;
+        //amp_file.WriteLine(temp_double);
+
+        current_projection.complex_values[pixel_counter] /= amplitude;
     }
+}
+current_projection.BackwardFFT( );
 
-    current_projection.BackwardFFT( );
+current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges( ));
+variance = current_projection.ReturnSumOfSquares( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels - powf(current_projection.ReturnAverageOfRealValues( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
+current_projection.DivideByConstant(sqrtf(variance));
+current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
 
-    current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges( ));
-    variance = current_projection.ReturnSumOfSquares( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels - powf(current_projection.ReturnAverageOfRealValues( ) * current_projection.number_of_real_space_pixels / padded_reference.number_of_real_space_pixels, 2);
-    current_projection.DivideByConstant(sqrtf(variance));
-    current_projection.ClipIntoLargerRealSpace2D(&padded_reference);
+padded_reference.ForwardFFT( );
+padded_reference.ZeroCentralPixel( );
 
-    padded_reference.ForwardFFT( );
-    padded_reference.ZeroCentralPixel( );
+for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
+    padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+}
 
+if ( do_phase_matched_filter ) {
     for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
-        padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
+        float amplitude = abs(padded_reference.complex_values[pixel_counter]);
+
+        if ( amplitude == 0.0f )
+            amplitude = 0.000001f;
+        //amp_file.WriteLine(temp_double);
+
+        padded_reference.complex_values[pixel_counter] /= amplitude;
     }
+}
 
-    if ( do_phase_matched_filter ) {
-        for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
-            float amplitude = abs(padded_reference.complex_values[pixel_counter]);
+////// update mip, and histogram..
+padded_reference.BackwardFFT( );
+padded_reference.QuickAndDirtyWriteSlice(output_max_file.ToStdString( ), true);
 
-            if ( amplitude == 0.0f )
-                amplitude = 1.0; //0.000001f;
-            //amp_file.WriteLine(temp_double);
+pixel_counter = 0;
 
-            padded_reference.complex_values[pixel_counter] /= amplitude;
+for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
+    for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
+        // first mip
+
+        if ( padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
+            max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
+            //best_psi.real_values[pixel_counter]                 = current_psi;
+            //best_theta.real_values[pixel_counter]               = global_euler_search.list_of_search_parameters[current_search_position][1];
+            //best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
+            //best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
+            //best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
         }
+
+        pixel_counter++;
     }
 
-    ////// update mip, and histogram..
-    padded_reference.BackwardFFT( );
-    padded_reference.QuickAndDirtyWriteSlice("correct_pose_cc.mrc", 1);
+    pixel_counter += padded_reference.padding_jump_value;
+}
+*/
+    // calculate avg and std
 
-    pixel_counter = 0;
-
-    for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
-        for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
-            // first mip
-
-            if ( padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
-                max_intensity_projection.real_values[pixel_counter] = padded_reference.real_values[pixel_counter];
-                //best_psi.real_values[pixel_counter]                 = current_psi;
-                //best_theta.real_values[pixel_counter]               = global_euler_search.list_of_search_parameters[current_search_position][1];
-                //best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
-                //best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
-                //best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
+    for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
+        correlation_pixel_sum_image.real_values[pixel_counter]            = (float)correlation_pixel_sum[pixel_counter];
+        correlation_pixel_sum_of_squares_image.real_values[pixel_counter] = (float)correlation_pixel_sum_of_squares[pixel_counter];
+    }
+    if ( is_running_locally == true ) {
+        // scaling
+        delete my_progress;
+        for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
+            correlation_pixel_sum[pixel_counter] /= float(total_correlation_positions);
+            correlation_pixel_sum_of_squares[pixel_counter] = correlation_pixel_sum_of_squares[pixel_counter] / float(total_correlation_positions) - powf(correlation_pixel_sum[pixel_counter], 2);
+            if ( correlation_pixel_sum_of_squares[pixel_counter] > 0.0f ) {
+                correlation_pixel_sum_of_squares[pixel_counter] = sqrtf(correlation_pixel_sum_of_squares[pixel_counter]) * (float)sqrt_input_pixels;
             }
-
-            pixel_counter++;
+            else
+                correlation_pixel_sum_of_squares[pixel_counter] = 0.0f;
+            correlation_pixel_sum[pixel_counter] *= (float)sqrt_input_pixels;
         }
-
-        pixel_counter += padded_reference.padding_jump_value;
     }
-    //////
+    max_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels);
+    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_mip.mrc", output_name_prefix).ToStdString( ), true);
+
+    for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
+        max_intensity_projection.real_values[pixel_counter] -= correlation_pixel_sum[pixel_counter];
+        if ( correlation_pixel_sum_of_squares[pixel_counter] > 0.0f ) {
+            max_intensity_projection.real_values[pixel_counter] /= correlation_pixel_sum_of_squares[pixel_counter];
+        }
+        else
+            max_intensity_projection.real_values[pixel_counter] = 0.0f;
+        correlation_pixel_sum_image.real_values[pixel_counter]            = correlation_pixel_sum[pixel_counter];
+        correlation_pixel_sum_of_squares_image.real_values[pixel_counter] = correlation_pixel_sum_of_squares[pixel_counter];
+    }
+
+    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_smip.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    correlation_pixel_sum_image.QuickAndDirtyWriteSlice(wxString::Format("%s_avg.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(wxString::Format("%s_std.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    best_psi.QuickAndDirtyWriteSlice(wxString::Format("%s_best_psi.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    best_theta.QuickAndDirtyWriteSlice(wxString::Format("%s_best_theta.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    best_phi.QuickAndDirtyWriteSlice(wxString::Format("%s_best_phi.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
 
     long   number_of_result_floats = 0;
     float* pointer_to_histogram_data;
@@ -621,24 +756,5 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     }
     histogram_file.Close( );
 
-    if ( is_running_locally == true ) {
-        delete my_progress;
-
-        // scale images..
-
-        for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
-            correlation_pixel_sum[pixel_counter] /= float(total_correlation_positions);
-            correlation_pixel_sum_of_squares[pixel_counter] = correlation_pixel_sum_of_squares[pixel_counter] / float(total_correlation_positions) - powf(correlation_pixel_sum[pixel_counter], 2);
-            if ( correlation_pixel_sum_of_squares[pixel_counter] > 0.0f ) {
-                correlation_pixel_sum_of_squares[pixel_counter] = sqrtf(correlation_pixel_sum_of_squares[pixel_counter]) * (float)sqrt_input_pixels;
-            }
-            else
-                correlation_pixel_sum_of_squares[pixel_counter] = 0.0f;
-            correlation_pixel_sum[pixel_counter] *= (float)sqrt_input_pixels;
-        }
-
-        max_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels);
-        max_intensity_projection.QuickAndDirtyWriteSlice(output_mip_file.ToStdString( ), true);
-    }
     return true;
 }

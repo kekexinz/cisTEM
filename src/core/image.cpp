@@ -6809,6 +6809,55 @@ void Image::ComputeAmplitudeSpectrumFull2D(Image* amplitude_spectrum, bool calcu
     amplitude_spectrum->object_is_centred_in_box = true;
 }
 
+void Image::ComputePhaseSpectrumFull2D(Image* amplitude_spectrum) {
+    MyDebugAssertTrue(is_in_memory, "Memory not allocated");
+    MyDebugAssertTrue(amplitude_spectrum->is_in_memory, "Other image memory not allocated");
+    MyDebugAssertTrue(HasSameDimensionsAs(amplitude_spectrum), "Images do not have same dimensions");
+    MyDebugAssertFalse(is_in_real_space, "Image not in Fourier space");
+
+    int ampl_addr_i;
+    int ampl_addr_j;
+    int image_addr_i;
+    int image_addr_j;
+    int i_mate;
+    int j_mate;
+
+    long address_in_amplitude_spectrum = 0;
+    long address_in_self;
+
+    float amplitude;
+    float phase;
+
+    // Loop over the amplitude spectrum
+    for ( ampl_addr_j = 0; ampl_addr_j < amplitude_spectrum->logical_y_dimension; ampl_addr_j++ ) {
+        for ( ampl_addr_i = 0; ampl_addr_i < amplitude_spectrum->logical_x_dimension; ampl_addr_i++ ) {
+            address_in_self = ReturnFourier1DAddressFromLogicalCoord(ampl_addr_i - amplitude_spectrum->physical_address_of_box_center_x, ampl_addr_j - amplitude_spectrum->physical_address_of_box_center_y, 0);
+            amplitude       = abs(complex_values[address_in_self]);
+
+            if ( amplitude != 0.0f ) {
+                if ( ampl_addr_i >= amplitude_spectrum->physical_address_of_box_center_x )
+                    phase = std::arg(complex_values[address_in_self]);
+                else
+                    phase = std::arg(conj(complex_values[address_in_self]));
+            }
+            else
+                phase = 0.0f;
+            //phase = fmodf(phase, 2.0f * (float)PI);
+            //if ( phase > PI )
+            //    phase -= 2.0f * PI;
+            //if ( phase <= -PI )
+            //    phase += 2.0f * PI;
+            amplitude_spectrum->real_values[address_in_amplitude_spectrum] = phase;
+
+            address_in_amplitude_spectrum++;
+        }
+        address_in_amplitude_spectrum += amplitude_spectrum->padding_jump_value;
+    }
+    // Done
+    amplitude_spectrum->is_in_real_space         = true;
+    amplitude_spectrum->object_is_centred_in_box = true;
+}
+
 void Image::ComputeFilteredAmplitudeSpectrumFull2D(Image* average_spectrum_masked, Image* current_power_spectrum, float& average, float& sigma, float minimum_resolution, float maximum_resolution, float pixel_size_for_fitting) {
 
     // This is pulled from the ctffind.cpp App - this filtering is used also in wave_function_propagtor::ReturnImageContrast. Any changes here should affect both programs identically.
