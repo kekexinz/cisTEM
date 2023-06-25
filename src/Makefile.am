@@ -598,7 +598,6 @@ calculate_cross_correlations_LDADD = libcore.a $(WX_LIBS_BASE)
 phase_matched_filter_SOURCES = programs/phase_matched_filter/phase_matched_filter.cpp
 phase_matched_filter_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 phase_matched_filter_CPPFLAGS = $(WX_CPPFLAGS_BASE)
-phase_matched_filter_LDADD = libcore.a $(WX_LIBS_BASE)
 
 
 local_resolution_filter_SOURCES = programs/local_resolution_filter/local_resolution_filter.cpp
@@ -752,6 +751,13 @@ if ENABLEGPU_AM
 match_template_LDADD = libgpucore.a libcore.a $(WX_LIBS_BASE) $(CUDA_LIBS)
 else
 match_template_LDADD = libcore.a $(WX_LIBS_BASE)
+endif
+
+
+if ENABLEGPU_AM 
+phase_matched_filter_LDADD = libgpucore.a libcore.a $(WX_LIBS_BASE) $(CUDA_LIBS)
+else
+phase_matched_filter_LDADD = libcore.a $(WX_LIBS_BASE)
 endif
 
 make_template_result_SOURCES = programs/make_template_result/make_template_result.cpp

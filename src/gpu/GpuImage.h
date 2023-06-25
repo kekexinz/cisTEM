@@ -290,6 +290,8 @@ class GpuImage {
     void      HistogramEvenBins( ); // TODO add me
     void      HistogramDefinedBins( ); // TODO add me
 
+    void NormalizeAmplitude( );
+
     // TODO
     /*
 

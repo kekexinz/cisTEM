@@ -193,16 +193,16 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             average_of_reals *= ((float)d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
 
             d_current_projection.MultiplyByConstant(rsqrtf(d_current_projection.ReturnSumOfSquares( ) / (float)d_padded_reference.number_of_real_space_pixels - (average_of_reals * average_of_reals)));
-            //d_current_projection.ForwardFFT(false);
-            //d_current_projection.NormalizeAmplitude( );
-            //d_current_projection.BackwardFFT( );
+            d_current_projection.ForwardFFT(false);
+            d_current_projection.NormalizeAmplitude( );
+            d_current_projection.BackwardFFT( );
             d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
             cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
             // For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
             // cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
             // Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
-            d_padded_reference.ForwardFFT(false);
+            d_padded_reference.ForwardFFT( );
 
             //      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
             d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);

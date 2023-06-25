@@ -48,6 +48,8 @@ __global__ void ClipIntoRealKernel(cufftReal* real_values_gpu,
                                    int3       wanted_coordinate_of_box_center,
                                    float      wanted_padding_value);
 
+__global__ void NormalizeAmplitudeKernel(cufftComplex* ref_complex_values, int4 dims, int3 physical_upper_bound_complex);
+
 // cuFFT callbacks
 __device__ cufftReal CB_ConvertInputf16Tof32(void* dataIn, size_t offset, void* callerInfo, void* sharedPtr);
 
@@ -2891,4 +2893,38 @@ void GpuImage::ClipIntoFourierSpace(GpuImage* destination_image, float wanted_pa
 
     postcheck
             cudaStreamSynchronize(cudaStreamPerThread);
+}
+
+void GpuImage::NormalizeAmplitude( ) {
+
+    MyDebugAssertTrue(is_in_memory_gpu, "Memory not allocated");
+    MyDebugAssertFalse(is_in_real_space, "Image in real space");
+    //BufferInit(b_image);
+    ReturnLaunchParamters(dims, false);
+
+    //this->threadsPerBlock = dim3(1024, 1, 1);
+    //this->gridDims = dim3((real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x,1,1);
+    //pre_checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
+    NormalizeAmplitudeKernel<<<this->gridDims, this->threadsPerBlock, 0, cudaStreamPerThread>>>(this->complex_values_gpu, this->dims, this->physical_upper_bound_complex);
+    //checkErrorsAndTimingWithSynchronization(cudaStreamPerThread);
+}
+
+__global__ void NormalizeAmplitudeKernel(cufftComplex* ref_complex_values, int4 dims, int3 physical_upper_bound_complex) {
+    //float amplitude;
+    int3 coords = make_int3(blockIdx.x * blockDim.x + threadIdx.x,
+                            blockIdx.y * blockDim.y + threadIdx.y,
+                            blockIdx.z);
+    if ( coords.x < dims.w / 2 && coords.y < dims.y && coords.z < dims.z ) {
+        int address = d_ReturnFourier1DAddressFromPhysicalCoord(coords, physical_upper_bound_complex);
+        //float s;
+        //s = 0.0f;
+
+        float amplitude = (float)cuCabsf(ref_complex_values[address]);
+        if ( amplitude == 0.0f )
+            amplitude = 0.000001f;
+        //d_input[address].x = d_input[address].x / amplitude;
+        //d_input[address].y = d_input[address].y / amplitude;
+        //ref_complex_values[address] = (cufftComplex)ComplexMul((Complex)ref_complex_values[address],(Complex)ref_complex_values[address]);
+        ref_complex_values[address] = (cufftComplex)ScaleComplex((Complex)ref_complex_values[address], (1.0f / amplitude));
+    }
 }
