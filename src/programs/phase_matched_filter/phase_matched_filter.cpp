@@ -52,18 +52,19 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     bool use_gpu_input = false;
     int  max_threads   = 1;
 
-    bool  do_constrained_search     = false;
-    float phi_start                 = 0.0;
-    float phi_max                   = 360.0;
-    float theta_start               = 0.0;
-    float theta_max                 = 180.0;
-    float psi_start                 = 0.0;
-    float psi_max                   = 360.0;
-    bool  do_phase_matched_filter   = false;
-    int   whitening_option          = 1;
-    bool  do_whiten_image           = true;
-    int   do_extract_phase_image    = 1;
-    int   do_extract_phase_template = 1;
+    bool  do_constrained_search   = false;
+    float phi_start               = 0.0;
+    float phi_max                 = 360.0;
+    float theta_start             = 0.0;
+    float theta_max               = 180.0;
+    float psi_start               = 0.0;
+    float psi_max                 = 360.0;
+    float fixed_phi               = 0.0;
+    float fixed_theta             = 0.0;
+    float fixed_psi               = 0.0;
+    bool  do_phase_matched_filter = false;
+    int   do_whiten_ref           = 1;
+    bool  do_whiten_image         = true;
 
     UserInput* my_input = new UserInput("PhaseMatchedFilter", 1.00);
 
@@ -94,19 +95,17 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
         theta_start = my_input->GetFloatFromUser("Constrained search Theta min", "max theta for constrained search", "0.0", 0.0, 180.0);
         psi_max     = my_input->GetFloatFromUser("Constrained search Psi max", "max psi for constrained search", "360.0", 0.0, 360.0);
         psi_start   = my_input->GetFloatFromUser("Constrained search Psi min", "max psi for constrained search", "0.0.0", 0.0, 360.0);
+        fixed_phi   = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", 0.0, 360.0);
+        fixed_theta = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", 0.0, 360.0);
+        fixed_psi   = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", 0.0, 360.0);
     }
-    float fixed_phi   = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", 0.0, 360.0);
-    float fixed_theta = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", 0.0, 360.0);
-    float fixed_psi   = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", 0.0, 360.0);
     //    best_parameters_to_keep = my_input->GetIntFromUser("Number of top hits to refine", "The number of best global search orientations to refine locally", "20", 1);
     padding                   = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "1.0", 1.0, 2.0);
     particle_radius_angstroms = my_input->GetFloatFromUser("Mask radius for global search (A) (0.0 = max)", "Radius of a circular mask to be applied to the input images during global search", "0.0", 0.0);
     my_symmetry               = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
     do_phase_matched_filter   = my_input->GetYesNoFromUser("Perform phase-only matched filter in cc calculation", "yes no", "no");
-    whitening_option          = my_input->GetIntFromUser("How to whiten ref? (1: by img  2: by self  3: no whitening)", "1: by img  2: by self  3: no whitening", "1", 1, 3);
+    do_whiten_ref             = my_input->GetIntFromUser("How to whiten ref? (1: by img  2: by self  3: no whitening)", "1: by img  2: by self  3: no whitening", "1", 1, 3);
     do_whiten_image           = my_input->GetYesNoFromUser("Whiten image?", "yes no", "yes");
-    do_extract_phase_image    = my_input->GetIntFromUser("Extract phase or amplitude component from image? (1: full  2: amplitude  3: phase)", "1: full  2: amplitude  3: phase", "1", 1, 3);
-    do_extract_phase_template = my_input->GetIntFromUser("Extract phase or amplitude component from template? (1: full  2: amplitude  3: phase)", "1: full  2: amplitude  3: phase", "1", 1, 3);
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
@@ -118,7 +117,7 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbfffffffffbibiitbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbfffffffffbibtbi", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -156,10 +155,8 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
                                       fixed_psi,
                                       //output_mip_file.ToUTF8( ).data( ),
                                       do_phase_matched_filter,
-                                      whitening_option,
+                                      do_whiten_ref,
                                       do_whiten_image,
-                                      do_extract_phase_image,
-                                      do_extract_phase_template,
                                       output_name_prefix.ToUTF8( ).data( ),
                                       use_gpu_input,
                                       max_threads);
@@ -205,14 +202,12 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     float    fixed_theta                   = my_current_job.arguments[34].ReturnFloatArgument( );
     float    fixed_psi                     = my_current_job.arguments[35].ReturnFloatArgument( );
     //  wxString output_mip_file               = my_current_job.arguments[36].ReturnStringArgument( );
-    bool     do_phase_matched_filter   = my_current_job.arguments[36].ReturnBoolArgument( );
-    int      whitening_option          = my_current_job.arguments[37].ReturnIntegerArgument( );
-    bool     do_whiten_image           = my_current_job.arguments[38].ReturnBoolArgument( );
-    int      do_extract_phase_image    = my_current_job.arguments[39].ReturnIntegerArgument( );
-    int      do_extract_phase_template = my_current_job.arguments[40].ReturnIntegerArgument( );
-    wxString output_name_prefix        = my_current_job.arguments[41].ReturnStringArgument( );
-    bool     use_gpu                   = my_current_job.arguments[42].ReturnBoolArgument( );
-    int      max_threads               = my_current_job.arguments[43].ReturnIntegerArgument( );
+    bool     do_phase_matched_filter = my_current_job.arguments[36].ReturnBoolArgument( );
+    int      do_whiten_ref           = my_current_job.arguments[37].ReturnIntegerArgument( );
+    bool     do_whiten_image         = my_current_job.arguments[38].ReturnBoolArgument( );
+    wxString output_name_prefix      = my_current_job.arguments[39].ReturnStringArgument( );
+    bool     use_gpu                 = my_current_job.arguments[40].ReturnBoolArgument( );
+    int      max_threads             = my_current_job.arguments[41].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -311,42 +306,23 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     long  pixel_counter;
     Image temp_image;
 
-    Curve whitening_filter_ref, whitening_filter_img;
-    Curve number_of_terms_ref, number_of_terms_img;
-    whitening_filter_img.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    number_of_terms_img.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    whitening_filter_ref.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((template_reconstruction.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    number_of_terms_ref.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((template_reconstruction.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    Curve whitening_filter;
+    Curve number_of_terms;
+    whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
 
     input_image.ReplaceOutliersWithMean(5.0f);
     input_image.ForwardFFT( );
     input_image.SwapRealSpaceQuadrants( );
 
     input_image.ZeroCentralPixel( );
-    input_image.Compute1DPowerSpectrumCurve(&whitening_filter_img, &number_of_terms_img);
-    whitening_filter_img.SquareRoot( );
-    whitening_filter_img.Reciprocal( );
-    whitening_filter_img.MultiplyByConstant(1.0f / whitening_filter_img.ReturnMaximumValue( ));
-    //whitening_filter_img.WriteToFile("w_filter_img.txt");
+    input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+    whitening_filter.SquareRoot( );
+    whitening_filter.Reciprocal( );
+    whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
+    //whitening_filter.WriteToFile("w_filter.txt");
     if ( do_whiten_image ) {
-        input_image.ApplyCurveFilter(&whitening_filter_img);
-    }
-
-    if ( do_extract_phase_image == 3 ) {
-        for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated / 2; pixel_counter++ ) {
-            amplitude = abs(input_image.complex_values[pixel_counter]);
-            if ( amplitude == 0.0f )
-                amplitude = 0.000001f;
-            input_image.complex_values[pixel_counter] /= amplitude;
-        }
-    }
-    else if ( do_extract_phase_image == 2 ) {
-        temp_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-        input_image.ComputeAmplitudeSpectrumFull2D(&temp_image);
-        input_image.CopyFrom(&temp_image);
-        temp_image.Deallocate( );
-        input_image.ForwardFFT( );
-        input_image.SwapRealSpaceQuadrants( );
+        input_image.ApplyCurveFilter(&whitening_filter);
     }
 
     input_image.ZeroCentralPixel( );
@@ -358,8 +334,8 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
     projection_filter.CalculateCTFImage(input_ctf);
 
-    if ( whitening_option == 1 )
-        projection_filter.ApplyCurveFilter(&whitening_filter_img);
+    if ( do_whiten_ref == 1 )
+        projection_filter.ApplyCurveFilter(&whitening_filter);
 
     AnglesAndShifts angles;
     EulerSearch     global_euler_search;
@@ -595,7 +571,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     else {
         // start rotational search
         // openmp
-        //#pragma omp parallel num_threads(max_threads) default(shared) private(current_search_position, angles, current_psi, variance, pixel_counter, current_x, current_y, current_projection, padded_projection, whitening_filter_ref, number_of_terms_ref, amplitude, temp_image, padded_reference)
+        //#pragma omp parallel num_threads(max_threads) default(shared) private(current_search_position, angles, current_psi, variance, pixel_counter, current_x, current_y, current_projection, padded_projection,amplitude, temp_image, padded_reference)
         for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
             for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
                 angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
@@ -614,45 +590,6 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                 }
 
                 current_projection.MultiplyPixelWise(projection_filter); // only the ctf
-
-                if ( whitening_option == 2 ) {
-                    //  current_projection.QuickAndDirtyWriteSlice("full.mrc", 1);
-                    current_projection.Compute1DPowerSpectrumCurve(&whitening_filter_ref, &number_of_terms_ref);
-                    whitening_filter_ref.SquareRoot( );
-                    whitening_filter_ref.Reciprocal( );
-                    whitening_filter_ref.MultiplyByConstant(1.0f / whitening_filter_ref.ReturnMaximumValue( ));
-                    //whitening_filter_ref.WriteToFile("w_filter_ref.txt");
-
-                    // Image amplitude_spectrum;
-                    // amplitude_spectrum.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
-                    // current_projection.ComputeAmplitudeSpectrumFull2D(&amplitude_spectrum);
-                    current_projection.ApplyCurveFilter(&whitening_filter_ref);
-                    // current_projection.QuickAndDirtyWriteSlice("phase.mrc", 1);
-                    // amplitude_spectrum.QuickAndDirtyWriteSlice("amplitude.mrc", 1);
-                    //current_projection.ZeroCentralPixel( );
-                    //current_projection.DivideByConstant(sqrtf(current_projection.ReturnSumOfSquares( )));
-                }
-                if ( do_extract_phase_template == 3 ) {
-                    //temp_image.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
-                    //current_projection.ComputePhaseSpectrumFull2D(&temp_image);
-                    // temp_image.QuickAndDirtyWriteSlice("template_phase1.mrc", 1);
-                    for ( pixel_counter = 0; pixel_counter < current_projection.real_memory_allocated / 2; pixel_counter++ ) {
-                        amplitude = abs(current_projection.complex_values[pixel_counter]);
-                        //wxPrintf("amplitude of template = %f\n", amplitude);
-
-                        if ( amplitude == 0.0f )
-                            amplitude = 0.000001f;
-                        //amp_file.WriteLine(temp_double);
-
-                        current_projection.complex_values[pixel_counter] /= amplitude;
-                    }
-                }
-                else if ( do_extract_phase_template == 2 ) {
-                    temp_image.Allocate(current_projection.logical_x_dimension, current_projection.logical_y_dimension, true);
-                    current_projection.ComputeAmplitudeSpectrumFull2D(&temp_image);
-                    current_projection.CopyFrom(&temp_image);
-                    current_projection.ForwardFFT( );
-                }
 
                 current_projection.BackwardFFT( );
 
@@ -781,7 +718,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
         correlation_pixel_sum_of_squares_image.real_values[pixel_counter] = correlation_pixel_sum_of_squares[pixel_counter];
     }
 
-    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_smip.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_scaled_mip.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
     correlation_pixel_sum_image.QuickAndDirtyWriteSlice(wxString::Format("%s_avg.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
     correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(wxString::Format("%s_std.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
     best_psi.QuickAndDirtyWriteSlice(wxString::Format("%s_best_psi.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
