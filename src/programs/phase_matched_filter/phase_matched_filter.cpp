@@ -691,8 +691,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                 padded_reference.is_in_real_space   = true;
 
                 //current_correlation_position = current_correlation_position + 1;
-                if ( is_running_locally == true )
-                    my_progress->Update(current_correlation_position_private * max_threads);
+
             } // end of IP search
 #pragma omp critical
             {
@@ -701,6 +700,8 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                     correlation_pixel_sum[pixel_counter] += correlation_pixel_sum_private[pixel_counter];
                     correlation_pixel_sum_of_squares[pixel_counter] += correlation_pixel_sum_of_squares_private[pixel_counter];
                 }
+                if ( is_running_locally == true )
+                    my_progress->Update(current_correlation_position);
             }
         } // end of OOP search
         // wxPrintf("end of OOP\n");
