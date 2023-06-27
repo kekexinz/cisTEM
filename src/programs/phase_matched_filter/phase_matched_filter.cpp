@@ -108,8 +108,8 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     do_phase_only             = my_input->GetYesNoFromUser("do_phase_only?", "yes no", "yes");
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
-    max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
+    max_threads = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 
     int   first_search_position = -1;
     int   last_search_position  = -1;
