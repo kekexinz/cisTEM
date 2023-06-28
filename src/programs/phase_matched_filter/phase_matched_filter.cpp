@@ -22,10 +22,12 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
     wxString output_histogram_file;
     wxString correlation_avg_output_file;
     wxString correlation_std_output_file;
-    wxString output_mip_file;
-    wxString output_scaled_mip_file;
-    wxString output_max_file;
-    wxString output_name_prefix;
+
+    wxString mip_output_file;
+    wxString best_psi_output_file;
+    wxString best_theta_output_file;
+    wxString best_phi_output_file;
+    wxString scaled_mip_output_file;
 
     float pixel_size              = 1.0f;
     float voltage_kV              = 300.0f;
@@ -68,26 +70,28 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
 
     UserInput* my_input = new UserInput("PhaseMatchedFilter", 1.00);
 
-    input_search_images   = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
-    input_reconstruction  = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
-    output_histogram_file = my_input->GetFilenameFromUser("Output histogram of correlation values", "histogram of all correlation values", "histogram.txt", false);
-    //output_mip_file             = my_input->GetFilenameFromUser("Output mip", "mip", "mip.mrc", false);
-    //output_scaled_mip_file      = my_input->GetFilenameFromUser("Output scaled mip", "scaled mip", "scaled_mip.mrc", false);
-    //correlation_avg_output_file = my_input->GetFilenameFromUser("Correlation average value", "The file for saving the average value of all correlation images", "corr_average.mrc", false);
-    //correlation_std_output_file = my_input->GetFilenameFromUser("Correlation standard deviation value", "The file for saving the std value of all correlation images", "corr_variance.mrc", false);
-    output_name_prefix      = my_input->GetFilenameFromUser("output name prefix (e.g. clathrin_particle_25_noise_snr0.01_wii_wri_fi_fr)", "output name prefix", "clathrin_simulation/clathrin_particle_25_with_noise_snr0.001_20deg_wii_wri_fi_pr_", false);
-    pixel_size              = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
-    voltage_kV              = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
-    spherical_aberration_mm = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7");
-    amplitude_contrast      = my_input->GetFloatFromUser("Amplitude contrast", "Assumed amplitude contrast", "0.07", 0.0, 1.0);
-    defocus1                = my_input->GetFloatFromUser("Defocus1 (angstroms)", "Defocus1 for the input image", "10000", 0.0);
-    defocus2                = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
-    defocus_angle           = my_input->GetFloatFromUser("Defocus Angle (degrees)", "Defocus Angle for the input image", "0.0");
-    phase_shift             = my_input->GetFloatFromUser("Phase Shift (degrees)", "Additional phase shift in degrees", "0.0");
-    high_resolution_limit   = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
-    angular_step            = my_input->GetFloatFromUser("Out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
-    in_plane_angular_step   = my_input->GetFloatFromUser("In plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
-    do_constrained_search   = my_input->GetYesNoFromUser("Perform constraied angular search", "yes no", "no");
+    input_search_images         = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
+    input_reconstruction        = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
+    output_histogram_file       = my_input->GetFilenameFromUser("Output histogram of correlation values", "histogram of all correlation values", "histogram.txt", false);
+    mip_output_file             = my_input->GetFilenameFromUser("Output MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
+    scaled_mip_output_file      = my_input->GetFilenameFromUser("Output Scaled MIP file", "The file for saving the maximum intensity projection image divided by correlation variance", "mip_scaled.mrc", false);
+    best_psi_output_file        = my_input->GetFilenameFromUser("Output psi file", "The file for saving the best psi image", "psi.mrc", false);
+    best_theta_output_file      = my_input->GetFilenameFromUser("Output theta file", "The file for saving the best psi image", "theta.mrc", false);
+    best_phi_output_file        = my_input->GetFilenameFromUser("Output phi file", "The file for saving the best psi image", "phi.mrc", false);
+    correlation_avg_output_file = my_input->GetFilenameFromUser("Correlation average value", "The file for saving the average value of all correlation images", "corr_average.mrc", false);
+    correlation_std_output_file = my_input->GetFilenameFromUser("Correlation SD output file", "The file for saving the standard deviation of all correlation images", "corr_standard_deviation.mrc", false);
+    pixel_size                  = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
+    voltage_kV                  = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
+    spherical_aberration_mm     = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7");
+    amplitude_contrast          = my_input->GetFloatFromUser("Amplitude contrast", "Assumed amplitude contrast", "0.07", 0.0, 1.0);
+    defocus1                    = my_input->GetFloatFromUser("Defocus1 (angstroms)", "Defocus1 for the input image", "10000", 0.0);
+    defocus2                    = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
+    defocus_angle               = my_input->GetFloatFromUser("Defocus Angle (degrees)", "Defocus Angle for the input image", "0.0");
+    phase_shift                 = my_input->GetFloatFromUser("Phase Shift (degrees)", "Additional phase shift in degrees", "0.0");
+    high_resolution_limit       = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
+    angular_step                = my_input->GetFloatFromUser("Out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
+    in_plane_angular_step       = my_input->GetFloatFromUser("In plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+    do_constrained_search       = my_input->GetYesNoFromUser("Perform constraied angular search", "yes no", "no");
     if ( do_constrained_search ) {
         phi_max     = my_input->GetFloatFromUser("Constrained search Phi max", "max phi for constrained search", "360.0", 0.0, 360.0);
         phi_start   = my_input->GetFloatFromUser("Constrained search Phi min", "min phi for constrained search", "0.0", 0.0, 360.0);
@@ -117,7 +121,7 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbfffffffffbbbtbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffiffffffftftiifbfffffffffbbbtttttttbi", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -153,11 +157,16 @@ void PhaseMatchedFilterApp::DoInteractiveUserInput( ) {
                                       fixed_phi,
                                       fixed_theta,
                                       fixed_psi,
-                                      //output_mip_file.ToUTF8( ).data( ),
                                       do_whiten_ref,
                                       do_whiten_image,
                                       do_phase_only,
-                                      output_name_prefix.ToUTF8( ).data( ),
+                                      mip_output_file.ToUTF8( ).data( ),
+                                      scaled_mip_output_file.ToUTF8( ).data( ),
+                                      best_psi_output_file.ToUTF8( ).data( ),
+                                      best_theta_output_file.ToUTF8( ).data( ),
+                                      best_phi_output_file.ToUTF8( ).data( ),
+                                      correlation_avg_output_file.ToUTF8( ).data( ),
+                                      correlation_std_output_file.ToUTF8( ).data( ),
                                       use_gpu_input,
                                       max_threads);
 }
@@ -201,13 +210,18 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     float    fixed_phi                     = my_current_job.arguments[33].ReturnFloatArgument( );
     float    fixed_theta                   = my_current_job.arguments[34].ReturnFloatArgument( );
     float    fixed_psi                     = my_current_job.arguments[35].ReturnFloatArgument( );
-    //  wxString output_mip_file               = my_current_job.arguments[36].ReturnStringArgument( );
-    int      do_whiten_ref      = my_current_job.arguments[36].ReturnBoolArgument( );
-    bool     do_whiten_image    = my_current_job.arguments[37].ReturnBoolArgument( );
-    bool     do_phase_only      = my_current_job.arguments[38].ReturnBoolArgument( );
-    wxString output_name_prefix = my_current_job.arguments[39].ReturnStringArgument( );
-    bool     use_gpu            = my_current_job.arguments[40].ReturnBoolArgument( );
-    int      max_threads        = my_current_job.arguments[41].ReturnIntegerArgument( );
+    int      do_whiten_ref                 = my_current_job.arguments[36].ReturnBoolArgument( );
+    bool     do_whiten_image               = my_current_job.arguments[37].ReturnBoolArgument( );
+    bool     do_phase_only                 = my_current_job.arguments[38].ReturnBoolArgument( );
+    wxString mip_output_file               = my_current_job.arguments[39].ReturnStringArgument( );
+    wxString scaled_mip_output_file        = my_current_job.arguments[40].ReturnStringArgument( );
+    wxString best_psi_output_file          = my_current_job.arguments[41].ReturnStringArgument( );
+    wxString best_theta_output_file        = my_current_job.arguments[42].ReturnStringArgument( );
+    wxString best_phi_output_file          = my_current_job.arguments[43].ReturnStringArgument( );
+    wxString correlation_avg_output_file   = my_current_job.arguments[44].ReturnStringArgument( );
+    wxString correlation_std_output_file   = my_current_job.arguments[45].ReturnStringArgument( );
+    bool     use_gpu                       = my_current_job.arguments[46].ReturnBoolArgument( );
+    int      max_threads                   = my_current_job.arguments[47].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -216,11 +230,6 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     if ( ! use_gpu ) {
         SendInfo("GPU disabled\nCan use up to 44 threads on frankfurt\n.");
     }
-
-    // wxString output_max_file               = my_current_job.arguments[42].ReturnStringArgument( );
-    //  wxString output_scaled_mip_file      = my_current_job.arguments[42].ReturnStringArgument( );
-    //  wxString correlation_avg_output_file = my_current_job.arguments[43].ReturnStringArgument( );
-    //  wxString correlation_std_output_file = my_current_job.arguments[44].ReturnStringArgument( );
 
     // read in image file (with particle in the center, no randomness in x, y, z, defocus1, defocus2, defocus angle when simulating particles)
     // read in 3d template
@@ -268,7 +277,6 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     best_psi.SetToConstant(0.0f);
     best_theta.SetToConstant(0.0f);
     best_phi.SetToConstant(0.0f);
-    //best_defocus.SetToConstant(0.0f);
 
     ZeroDoubleArray(correlation_pixel_sum, input_image.real_memory_allocated);
     ZeroDoubleArray(correlation_pixel_sum_of_squares, input_image.real_memory_allocated);
@@ -386,7 +394,6 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     total_correlation_positions  = 0;
     current_correlation_position = 0;
     if ( is_running_locally == true ) {
-        wxPrintf("running locally...\n");
         first_search_position = 0;
         last_search_position  = global_euler_search.number_of_search_positions - 1;
     }
@@ -414,6 +421,10 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions);
 
     wxPrintf("Performing Search...\n\n");
+
+    wxDateTime overall_start;
+    wxDateTime overall_finish;
+    overall_start = wxDateTime::Now( );
 
     // GPU code
     float actual_number_of_ccs_calculated = 0.0;
@@ -517,7 +528,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                 GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
                 GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
 
-                mip_buffer.QuickAndDirtyWriteSlice("tmpMipBuffer.mrc", 1, 1);
+                // mip_buffer.QuickAndDirtyWriteSlice("tmpMipBuffer.mrc", 1, 1);
                 // TODO should prob aggregate these across all workers
                 // TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
                 Image sum;
@@ -582,6 +593,9 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
             ZeroDoubleArray(correlation_pixel_sum_private, input_image.real_memory_allocated);
             double* correlation_pixel_sum_of_squares_private = new double[input_image.real_memory_allocated];
             ZeroDoubleArray(correlation_pixel_sum_of_squares_private, input_image.real_memory_allocated);
+            // test mkl
+            float* amplitude_array = new float[input_image.real_memory_allocated];
+            ZeroFloatArray(amplitude_array, input_image.real_memory_allocated);
 
             for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
                 current_projection.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
@@ -590,6 +604,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                 padded_projection.Allocate(input_reconstruction_file.ReturnXSize( ) * padding, input_reconstruction_file.ReturnXSize( ) * padding, false);
 
                 angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+
                 if ( padding != 1.0f ) {
                     template_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
                     padded_projection.SwapRealSpaceQuadrants( );
@@ -614,14 +629,26 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
                 padded_reference.ForwardFFT( );
                 padded_reference.ZeroCentralPixel( );
 
-                //#ifdef MKL
+#ifdef MKL
                 // Use the MKL
-                //vmcMulByConj(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(input_image.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
-                //#else
-                //NumericTextFile amp_file("amplitude.txt", OPEN_TO_WRITE, 1);
+                vmcMulByConj(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(input_image.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+                vmcAbs(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), amplitude_array, VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+                for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
+                    if ( amplitude_array[pixel_counter] == 0.0 )
+                        amplitude_array[pixel_counter] = 0.000001f;
+                }
+                // vmcDiv(padded_reference.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), amplitude_array, reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
 
-                //amp_file.WriteCommentLine("amplitude");
-                //double temp_double[1];
+                // amp_file.WriteCommentLine("amplitude");
+                // float temp_double[1];
+                // for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
+                //     temp_double[0] = amplitude_array[pixel_counter];
+                //     amp_file.WriteLine(temp_double);
+                // }
+                // amp_file.Close( );
+                //exit(0);
+
+#else
 
                 for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
                     padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
@@ -633,14 +660,13 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
 
                     if ( amplitude == 0.0f )
                         amplitude = 0.000001f;
-                    //amp_file.WriteLine(temp_double);
-
-                    padded_reference.complex_values[pixel_counter] /= amplitude;
                 }
 
-                //amp_file.Close( );
-                //#endif
-
+#endif
+                // TODO mkl for element wise complex / float
+                for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated / 2; pixel_counter++ ) {
+                    padded_reference.complex_values[pixel_counter] /= amplitude_array[pixel_counter];
+                }
                 padded_reference.BackwardFFT( );
                 //padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
                 //exit(0);
@@ -709,6 +735,8 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
 
     } // end of else (not gpu)
 
+    wxPrintf("\n\n\tTimings: Overall: %s\n", (wxDateTime::Now( ) - overall_start).Format( ));
+
     // calculate avg and std
     for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
         correlation_pixel_sum_image.real_values[pixel_counter]            = (float)correlation_pixel_sum[pixel_counter];
@@ -729,7 +757,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
         }
     }
     max_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels);
-    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_mip.mrc", output_name_prefix).ToStdString( ), true);
+    max_intensity_projection.QuickAndDirtyWriteSlice(mip_output_file.ToStdString( ), true);
 
     for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
         max_intensity_projection.real_values[pixel_counter] -= correlation_pixel_sum[pixel_counter];
@@ -742,12 +770,12 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
         correlation_pixel_sum_of_squares_image.real_values[pixel_counter] = correlation_pixel_sum_of_squares[pixel_counter];
     }
 
-    max_intensity_projection.QuickAndDirtyWriteSlice(wxString::Format("%s_scaled_mip.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
-    correlation_pixel_sum_image.QuickAndDirtyWriteSlice(wxString::Format("%s_avg.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
-    correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(wxString::Format("%s_std.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
-    best_psi.QuickAndDirtyWriteSlice(wxString::Format("%s_best_psi.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
-    best_theta.QuickAndDirtyWriteSlice(wxString::Format("%s_best_theta.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
-    best_phi.QuickAndDirtyWriteSlice(wxString::Format("%s_best_phi.mrc", output_name_prefix).ToStdString( ), 1, pixel_size);
+    max_intensity_projection.QuickAndDirtyWriteSlice(scaled_mip_output_file.ToStdString( ), 1, pixel_size);
+    correlation_pixel_sum_image.QuickAndDirtyWriteSlice(correlation_avg_output_file.ToStdString( ), 1, pixel_size);
+    correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(correlation_std_output_file.ToStdString( ), 1, pixel_size);
+    best_psi.QuickAndDirtyWriteSlice(best_psi_output_file.ToStdString( ), 1, pixel_size);
+    best_theta.QuickAndDirtyWriteSlice(best_theta_output_file.ToStdString( ), 1, pixel_size);
+    best_phi.QuickAndDirtyWriteSlice(best_phi_output_file.ToStdString( ), 1, pixel_size);
 
     long   number_of_result_floats = 0;
     float* pointer_to_histogram_data;
@@ -763,7 +791,7 @@ bool PhaseMatchedFilterApp::DoCalculation( ) {
     // write out histogram
     float temp_float;
     temp_float = histogram_min + (histogram_step / 2.0f); // start position
-    NumericTextFile histogram_file(wxString::Format("%s.txt", output_histogram_file).ToStdString( ), OPEN_TO_WRITE, 2);
+    NumericTextFile histogram_file(output_histogram_file.ToStdString( ), OPEN_TO_WRITE, 2);
 
     histogram_file.WriteCommentLine("SNR, histogram");
 
