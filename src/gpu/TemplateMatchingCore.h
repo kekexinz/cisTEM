@@ -165,7 +165,7 @@ class TemplateMatchingCore {
               long             total_correlation_positions,
               bool             is_running_locally);
 
-    void RunInnerLoop(Image& projection_filter, float pixel_i, float defocus_i, int threadIDX, long& current_correlation_position);
+    void RunInnerLoop(Image& projection_filter, float pixel_i, float defocus_i, int threadIDX, long& current_correlation_position, bool do_phase_only = true);
 
   private:
 };

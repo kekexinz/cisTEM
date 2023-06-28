@@ -112,7 +112,7 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 };
 
-void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel, float c_defocus, int threadIDX, long& current_correlation_position) {
+void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel, float c_defocus, int threadIDX, long& current_correlation_position, bool do_phase_only) {
 
     // Make sure we are starting with zeros
     d_max_intensity_projection.Zeros( );
@@ -134,8 +134,8 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
     // Either do not delete the single precision, or add in a copy here so that each loop over defocus vals
     // have a copy to work with. Otherwise this will not exist on the second loop
-    d_input_image.ConvertToHalfPrecision(false);
-    d_padded_reference.ConvertToHalfPrecision(false);
+    // d_input_image.ConvertToHalfPrecision(false);
+    // d_padded_reference.ConvertToHalfPrecision(false);
 
     cudaErr(cudaMalloc((void**)&my_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMalloc((void**)&my_new_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
@@ -171,6 +171,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
         for ( float current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
 
             angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+            //angles.Init(291.35, 95.54, 33.79, 0.0, 0.0);
             //			current_projection.SetToConstant(0.0f); // This also sets the FFT padding to zero
             template_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
             current_projection.complex_values[0] = 0.0f + I * 0.0f;
@@ -193,19 +194,24 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             average_of_reals *= ((float)d_current_projection.number_of_real_space_pixels / (float)d_padded_reference.number_of_real_space_pixels);
 
             d_current_projection.MultiplyByConstant(rsqrtf(d_current_projection.ReturnSumOfSquares( ) / (float)d_padded_reference.number_of_real_space_pixels - (average_of_reals * average_of_reals)));
-            //d_current_projection.ForwardFFT(false);
-            //d_current_projection.NormalizeAmplitude( );
-            //d_current_projection.BackwardFFT( );
             d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
             cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
             // For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
-            // cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
+            // cuFFT multiplies by root(N) forward and then root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
             // Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
-            d_padded_reference.ForwardFFT(false);
+            d_padded_reference.ForwardFFT( );
+            // wxPrintf("scaled factor = %f\n", d_padded_reference.ft_normalization_factor);
 
             //      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
-            d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
+            d_padded_reference.MultiplyPixelWiseComplexConjugate(d_input_image);
+            d_padded_reference.NormalizeAmplitude( );
+            d_padded_reference.BackwardFFT( );
+            d_padded_reference.MultiplyByConstant(d_padded_reference.ft_normalization_factor * d_padded_reference.ft_normalization_factor);
+
+            d_padded_reference.ConvertToHalfPrecision(false); // assign memory for half arrays, copy 32f to 16f array (after cc calculation)
+
+            // d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
 
             //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
             //			d_padded_reference.ConvertToHalfPrecision(false);
