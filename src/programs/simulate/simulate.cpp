@@ -926,16 +926,19 @@ void SimulateApp::DoInteractiveUserInput( ) {
                 float max_exposure, mean_phase_shift, mean_beam_tilt_x(0.f), mean_beam_tilt_y(0.f);
                 mean_defocus     = 0.f;
                 mean_phase_shift = 0.f;
-                number_of_frames = 1;
+                // number_of_frames = 1;
+                number_of_frames = my_input->GetFloatFromUser("number of frames per movie (micrograph or tilt)", "", "30", 1.0, 1000.0);
+                dose_per_frame   = my_input->GetFloatFromUser("electrons/Ang^2 in a frame at the specimen", "", "1.0", 0.05, 20.0);
+
                 // Assuming this is constant for all particles and frames FIXME
-                dose_per_frame = input_star_file.ReturnTotalExposure(0) - input_star_file.ReturnPreExposure(0);
+                // dose_per_frame = input_star_file.ReturnTotalExposure(0) - input_star_file.ReturnPreExposure(0);
                 // tmp override for testing FIXME
-                dose_per_frame         = 1;
+                // dose_per_frame         = 1;
                 current_total_exposure = 1;
                 pre_exposure           = 1;
                 for ( int counter = 0; counter < number_preexisting_particles; counter++ ) {
                     mean_defocus += 0.5f * (input_star_file.ReturnDefocus1(counter) + input_star_file.ReturnDefocus2(counter));
-                    number_of_frames = std::max(number_of_frames, float(input_star_file.ReturnParticleGroup(counter))); // FIXME, why is number of frames a float, prob a bad idea
+                    //number_of_frames = std::max(number_of_frames, float(input_star_file.ReturnParticleGroup(counter))); // FIXME, why is number of frames a float, prob a bad idea
                     mean_beam_tilt_x += input_star_file.ReturnBeamTiltX(counter);
                     mean_beam_tilt_y += input_star_file.ReturnBeamTiltY(counter);
                 }
