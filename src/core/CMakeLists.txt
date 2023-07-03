@@ -69,12 +69,14 @@ if (BUILD_EXPERIMENTAL_FEATURES)
 		water.cpp 
 		pdb.cpp 
 	)
+	enable_optimization_flags(cisTEM_core_experimental)
 endif(BUILD_EXPERIMENTAL_FEATURES)
 
 target_link_libraries(cisTEM_core ${CMAKE_DL_LIBS})
 target_link_libraries(cisTEM_core ${FFTW_LIBRARIES})
 target_link_libraries(cisTEM_core ${wxWidgets_LIBRARIES})
 target_link_libraries(cisTEM_core ${TIFF_LIBRARIES})
+target_link_libraries(cisTEM_core ZLIB::ZLIB)
 
 target_link_libraries(cisTEM_gui_core ${wxWidgets_LIBRARIES})
 
@@ -82,3 +84,5 @@ if (BUILD_EXPERIMENTAL_FEATURES)
 	add_dependencies(cisTEM_core cisTEM_core_experimental)
 	target_link_libraries(cisTEM_core cisTEM_core_experimental)
 endif(BUILD_EXPERIMENTAL_FEATURES)
+
+enable_optimization_flags(cisTEM_core)

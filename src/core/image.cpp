@@ -1,6 +1,10 @@
 //BEGIN_FOR_STAND_ALONE_CTFFIND
 #include "core_headers.h"
 
+#ifdef MKL
+#include <mkl_vml.h>
+#endif
+
 using namespace cistem;
 
 wxMutex Image::s_mutexProtectingFFTW;
@@ -757,9 +761,14 @@ void Image::MultiplyPixelWise(Image& other_image) {
     if ( is_in_real_space ) {
         MyDebugAssertTrue(other_image.is_in_real_space, "Other image needs to be in real space");
         MyDebugAssertTrue(HasSameDimensionsAs(&other_image), "Images do not have same dimensions");
+
+#ifdef MKL
+        vsMul(real_memory_allocated, real_values, other_image.real_values, real_values);
+#else
         for ( pixel_counter = 0; pixel_counter < real_memory_allocated; pixel_counter++ ) {
             real_values[pixel_counter] *= other_image.real_values[pixel_counter];
         }
+#endif
     }
     else {
         if ( other_image.is_in_real_space ) {
@@ -792,10 +801,14 @@ void Image::MultiplyPixelWise(Image& other_image) {
         else {
             // Both images are in Fourier space
             MyDebugAssertTrue(HasSameDimensionsAs(&other_image), "Images do not have same dimensions");
-            // TODO: add MKL implementation (see EulerSearch::Run for a similar example)
+
+#ifdef MKL
+            vcMul(real_memory_allocated / 2, complex_values, other_image.complex_values, complex_values);
+#else
             for ( pixel_counter = 0; pixel_counter < real_memory_allocated / 2; pixel_counter++ ) {
                 complex_values[pixel_counter] *= other_image.complex_values[pixel_counter];
             }
+#endif
         }
     }
 }
@@ -4283,9 +4296,7 @@ Image& Image::operator=(const Image* other_image) {
         is_in_real_space         = other_image->is_in_real_space;
         object_is_centred_in_box = other_image->object_is_centred_in_box;
 
-        for ( long pixel_counter = 0; pixel_counter < real_memory_allocated; pixel_counter++ ) {
-            real_values[pixel_counter] = other_image->real_values[pixel_counter];
-        }
+        std::memcpy(real_values, other_image->real_values, sizeof(float) * real_memory_allocated);
     }
 
     return *this;
@@ -5071,6 +5082,12 @@ void Image::RemoveFFTWPadding( ) {
 
 void Image::SetToConstant(float wanted_value) {
     MyDebugAssertTrue(is_in_memory, "Memory not allocated");
+
+    if (wanted_value == 0.0f) {
+        // special case when zeroing - can leverage efficient byte-level memset
+        std::memset(real_values, 0, real_memory_allocated * sizeof(float));
+        return;
+    }
 
     for ( long pixel_counter = 0; pixel_counter < real_memory_allocated; pixel_counter++ ) {
         real_values[pixel_counter] = wanted_value;
@@ -6124,18 +6141,27 @@ void Image::AddImage(Image* other_image) {
                       "Image dimensions do not match, Image  %d, %d, %d \nImage to be added %d, %d, %d",
                       logical_x_dimension, logical_y_dimension, logical_z_dimension,
                       other_image->logical_x_dimension, other_image->logical_y_dimension, other_image->logical_z_dimension);
+
+#ifdef MKL
+    vsAdd(real_memory_allocated, real_values, other_image->real_values, real_values);
+#else
     for ( long pixel_counter = 0; pixel_counter < real_memory_allocated; pixel_counter++ ) {
         real_values[pixel_counter] += other_image->real_values[pixel_counter];
     }
+#endif
 }
 
 void Image::SubtractImage(Image* other_image) {
     MyDebugAssertTrue(is_in_memory, "Memory not allocated");
     MyDebugAssertTrue(HasSameDimensionsAs(other_image), "Images should have same dimensions, but they don't: %i %i %i        %i %i %i", logical_x_dimension, logical_y_dimension, logical_z_dimension, other_image->logical_x_dimension, other_image->logical_y_dimension, other_image->logical_z_dimension);
 
+#ifdef MKL
+    vsSub(real_memory_allocated, real_values, other_image->real_values, real_values);
+#else
     for ( long pixel_counter = 0; pixel_counter < real_memory_allocated; pixel_counter++ ) {
         real_values[pixel_counter] -= other_image->real_values[pixel_counter];
     }
+#endif
 }
 
 void Image::SubtractSquaredImage(Image* other_image) {
@@ -8271,6 +8297,13 @@ void Image::PhaseShift(float wanted_x_shift, float wanted_y_shift, float wanted_
         need_to_fft = true;
     }
 
+#ifdef MKL
+    std::size_t batch = physical_upper_bound_complex_x + 1;
+    float* temp_phase = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    std::complex<float>* temp_total_phase = static_cast<std::complex<float>*>(mkl_malloc(sizeof(std::complex<float>) * batch, 64));
+#endif
+
+
     for ( k = 0; k <= physical_upper_bound_complex_z; k++ ) {
         k_logical = ReturnFourierLogicalCoordGivenPhysicalCoord_Z(k);
         phase_z   = ReturnPhaseFromShift(wanted_z_shift, k_logical, logical_z_dimension);
@@ -8279,6 +8312,21 @@ void Image::PhaseShift(float wanted_x_shift, float wanted_y_shift, float wanted_
             j_logical = ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j);
             phase_y   = ReturnPhaseFromShift(wanted_y_shift, j_logical, logical_y_dimension);
 
+#ifdef MKL
+            // Process the entire x direction at once
+            for (std::size_t i = 0; i < batch; ++i) {
+                phase_x = ReturnPhaseFromShift(wanted_x_shift, i, logical_x_dimension);
+                temp_phase[i] = - phase_x - phase_y - phase_z;
+            }
+
+            // Fill the complex phase
+            vmcCIS(batch, temp_phase, temp_total_phase, VML_LA | VML_FTZDAZ_ON);
+
+            for (i = 0; i < batch; ++i) {
+                complex_values[pixel_counter] *= temp_total_phase[i];
+                pixel_counter++;
+            }
+#else
             for ( i = 0; i <= physical_upper_bound_complex_x; i++ ) {
 
                 phase_x = ReturnPhaseFromShift(wanted_x_shift, i, logical_x_dimension);
@@ -8288,8 +8336,14 @@ void Image::PhaseShift(float wanted_x_shift, float wanted_y_shift, float wanted_
 
                 pixel_counter++;
             }
+#endif
         }
     }
+
+#ifdef MKL
+    mkl_free(temp_phase);
+    mkl_free(temp_total_phase);
+#endif
 
     if ( need_to_fft == true )
         BackwardFFT( );
@@ -8345,16 +8399,69 @@ void Image::ApplyCTFPhaseFlip(CTF ctf_to_apply) {
     }
 }
 
-void Image::ApplyCTF(CTF ctf_to_apply, bool absolute, bool apply_beam_tilt, bool apply_envelope) {
+void Image::ApplyCTF(CTF const& ctf_to_apply, bool absolute, bool apply_beam_tilt, bool apply_envelope) {
     MyDebugAssertTrue(is_in_memory, "Memory not allocated");
     MyDebugAssertTrue(is_in_real_space == false, "image not in Fourier space");
     MyDebugAssertTrue(logical_z_dimension == 1, "Volumes not supported");
 
-    int j;
-    int i;
-
     long pixel_counter = 0;
 
+#if defined(MKL)
+    std::size_t batch = physical_upper_bound_complex_x + 1;
+
+    float* y_coord           = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    float* x_coord           = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    float* azimuth           = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    float* frequency_squared = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    float* buffer            = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+    float* ctf_value         = static_cast<float*>(mkl_malloc(sizeof(float) * batch, 64));
+
+    for ( int j = 0; j <= physical_upper_bound_complex_y; ++j ) {
+        float y_coord_single = ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j) * fourier_voxel_size_y;
+
+        std::fill_n(y_coord, batch, y_coord_single);
+        for ( int i = 0; i < batch; ++i ) {
+            float x_coord_single = i * fourier_voxel_size_x;
+            x_coord[i]           = x_coord_single;
+            frequency_squared[i] = x_coord_single * x_coord_single + y_coord_single * y_coord_single;
+        }
+
+        // Compute the azimuth
+        vmsAtan2(physical_upper_bound_complex_x, y_coord, x_coord, azimuth, VML_LA);
+
+        if ( apply_envelope ) {
+            ctf_to_apply.EvaluateWithEnvelope(batch, ctf_value, frequency_squared, azimuth, buffer);
+        }
+        else {
+            ctf_to_apply.Evaluate(batch, ctf_value, frequency_squared, azimuth, buffer);
+        }
+
+        if ( absolute ) {
+            for ( std::size_t i = 0; i < batch; ++i ) {
+                complex_values[pixel_counter + i] *= std::abs(ctf_value[i]);
+            }
+        }
+        else {
+            for ( std::size_t i = 0; i < batch; ++i ) {
+                complex_values[pixel_counter + i] *= ctf_value[i];
+            }
+        }
+
+        if ( apply_beam_tilt && (ctf_to_apply.GetBeamTiltX( ) != 0.0f || ctf_to_apply.GetBeamTiltY( ) != 0.0f) ) {
+            // TODO: implement beam tilt in fast path
+            std::abort();
+        }
+
+        pixel_counter += batch;
+    }
+
+    mkl_free(y_coord);
+    mkl_free(x_coord);
+    mkl_free(azimuth);
+    mkl_free(frequency_squared);
+    mkl_free(buffer);
+    mkl_free(ctf_value);
+#else
     float y_coord_sq;
     float x_coord_sq;
 
@@ -8365,11 +8472,11 @@ void Image::ApplyCTF(CTF ctf_to_apply, bool absolute, bool apply_beam_tilt, bool
     float azimuth;
     float ctf_value;
 
-    for ( j = 0; j <= physical_upper_bound_complex_y; j++ ) {
+    for ( int j = 0; j <= physical_upper_bound_complex_y; j++ ) {
         y_coord    = ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j) * fourier_voxel_size_y;
         y_coord_sq = powf(y_coord, 2.0);
 
-        for ( i = 0; i <= physical_upper_bound_complex_x; i++ ) {
+        for ( int i = 0; i <= physical_upper_bound_complex_x; i++ ) {
             x_coord    = i * fourier_voxel_size_x;
             x_coord_sq = powf(x_coord, 2);
 
@@ -8402,6 +8509,9 @@ void Image::ApplyCTF(CTF ctf_to_apply, bool absolute, bool apply_beam_tilt, bool
             pixel_counter++;
         }
     }
+
+#endif
+
     //	Image temp_image;
     //	temp_image.Allocate(logical_x_dimension, logical_y_dimension, false);
     //	ComputeAmplitudeSpectrumFull2D(&temp_image, true);
