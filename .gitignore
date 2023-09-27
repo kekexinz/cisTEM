@@ -24,3 +24,4 @@ RemoteSystemsTempFiles
 .vscode
 cistem_config.in*
 scripts/testing/post_format_test.cpp
+test/*
