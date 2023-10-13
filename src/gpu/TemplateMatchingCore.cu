@@ -2,7 +2,7 @@
 
 #define DO_HISTOGRAM true
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel,
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half* coc_output, __half2* my_peaks, __half2* my_coc2, const int numel,
                                    __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks);
 
 __global__ void McpPixelWiseKernel(__half* coc_output, __half2* my_coc2, const int numel, __half psi);
@@ -290,7 +290,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             //			else
             //			{
             this->MipPixelWise(__float2half_rn(current_psi), __float2half_rn(global_euler_search.list_of_search_parameters[current_search_position][1]), __float2half_rn(global_euler_search.list_of_search_parameters[current_search_position][0]));
-            this->McpPixelWise(__float2half_rn(current_psi));
+            // this->McpPixelWise(__float2half_rn(current_psi));
             //			this->MipPixelWise(d_padded_reference, float(current_psi) , float(global_euler_search.list_of_search_parameters[current_search_position][1]),
             //																			 	 float(global_euler_search.list_of_search_parameters[current_search_position][0]));
             //				this->SumPixelWise(d_padded_reference);
@@ -368,7 +368,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     d_sumSq3.AddImage(d_sumSq2);
 
     this->MipToImage( );
-    this->MCPToImage( );
+    // this->MCPToImage( );
 
     MyAssertTrue(histogram.is_allocated_histogram, "Trying to accumulate a histogram that has not been initialized!")
             histogram.Accumulate(d_padded_reference);
@@ -388,7 +388,7 @@ void TemplateMatchingCore::MipPixelWise(__half psi, __half theta, __half phi) {
             // N*
             d_padded_reference.ReturnLaunchParamtersLimitSMs(5.f, 1024);
 
-    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, my_peaks, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks);
+    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, (__half*)d_SCTF_padded_image.real_values_16f, my_peaks, my_coc2, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks);
     postcheck
 }
 
@@ -403,13 +403,14 @@ void TemplateMatchingCore::McpPixelWise(__half psi) {
     postcheck
 }
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks) {
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half* coc_output, __half2* my_peaks, __half2* my_coc2, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks) {
 
     //	Peaks tmp_peak;
 
     for ( int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel; i += blockDim.x * gridDim.x ) {
 
         const __half  half_val = correlation_output[i];
+        const __half  half_coc = coc_output[i];
         const __half2 input    = __half2half2(half_val * __half(10000.0));
         const __half2 mulVal   = __halves2half2((__half)1.0, half_val);
         //    	my_stats[i].sum = __hadd(my_stats[i].sum, half_val);
@@ -425,6 +426,7 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
             //				tmp_peak.mip = half_val;
             my_peaks[i]     = __halves2half2(half_val, psi);
             my_new_peaks[i] = __halves2half2(theta, phi);
+            my_coc2[i]      = __halves2half2(half_coc, 0.0);
 
             //				my_peaks[i].mip = correlation_output[i];
             //				my_peaks[i].psi = psi;
@@ -449,7 +451,7 @@ __global__ void McpPixelWiseKernel(__half* coc_output, __half2* my_coc2, const i
     //
 }
 
-__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
+__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const __half2*, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
 
 __global__ void MCPToImageKernel(const __half2*, const int, cufftReal*);
 
@@ -459,8 +461,8 @@ void TemplateMatchingCore::MipToImage( ) {
             dim3 threadsPerBlock = dim3(1024, 1, 1);
     dim3         gridDims        = dim3((d_max_intensity_projection.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
 
-    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, d_max_intensity_projection.real_memory_allocated,
-                                                                            d_max_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu);
+    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, my_coc2, d_max_intensity_projection.real_memory_allocated,
+                                                                            d_max_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu, d_max_coc_projection.real_values_gpu);
     postcheck
 }
 
@@ -475,7 +477,7 @@ void TemplateMatchingCore::MCPToImage( ) {
     postcheck
 }
 
-__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi) {
+__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const __half2* my_coc2, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi, cufftReal* mcp) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -485,6 +487,7 @@ __global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_
         psi[x]   = (cufftReal)__high2float(my_peaks[x]);
         theta[x] = (cufftReal)__low2float(my_new_peaks[x]);
         phi[x]   = (cufftReal)__high2float(my_new_peaks[x]);
+        mcp[x]   = (cufftReal)__low2float(my_coc2[x]);
     }
 }
 

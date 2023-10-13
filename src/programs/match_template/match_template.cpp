@@ -686,14 +686,11 @@ bool MatchTemplateApp::DoCalculation( ) {
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
-    input_image.ApplyCurveFilter(&whitening_filter);
+    // input_image.ApplyCurveFilter(&whitening_filter);
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
-    input_image.SwapRealSpaceQuadrants( );
-
-    input_image.QuickAndDirtyWriteSlice("A_white.mrc", 1);
-    input_image.SwapRealSpaceQuadrants( );
-    input_image.QuickAndDirtyWriteSlice("A.mrc", 1);
+    //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
+    //exit(-1);
 
     //exit(-1);
 
@@ -849,7 +846,7 @@ bool MatchTemplateApp::DoCalculation( ) {
             input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
             //            input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
             projection_filter.CalculateCTFImage(input_ctf);
-            projection_filter.ApplyCurveFilter(&whitening_filter);
+            // projection_filter.ApplyCurveFilter(&whitening_filter);
 
             //            projection_filter.QuickAndDirtyWriteSlices("/tmp/projection_filter.mrc",1,projection_filter.logical_z_dimension,true,1.5);
             if ( use_gpu ) {
@@ -911,6 +908,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                                     best_psi.real_values[pixel_counter]                 = psi_buffer.real_values[pixel_counter];
                                     best_theta.real_values[pixel_counter]               = theta_buffer.real_values[pixel_counter];
                                     best_phi.real_values[pixel_counter]                 = phi_buffer.real_values[pixel_counter];
+                                    max_coc_projection.real_values[pixel_counter]       = mcp_buffer.real_values[pixel_counter];
                                     best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
                                     best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
                                 }
@@ -924,19 +922,19 @@ bool MatchTemplateApp::DoCalculation( ) {
                             pixel_counter += max_intensity_projection.padding_jump_value;
                         }
 
-                        pixel_counter = 0;
-                        for ( current_y = 0; current_y < max_coc_projection.logical_y_dimension; current_y++ ) {
-                            for ( current_x = 0; current_x < max_coc_projection.logical_x_dimension; current_x++ ) {
-                                // first mip
+                        //  pixel_counter = 0;
+                        //  for ( current_y = 0; current_y < max_coc_projection.logical_y_dimension; current_y++ ) {
+                        //      for ( current_x = 0; current_x < max_coc_projection.logical_x_dimension; current_x++ ) {
+                        // first mip
 
-                                if ( mcp_buffer.real_values[pixel_counter] > max_coc_projection.real_values[pixel_counter] )
-                                    max_coc_projection.real_values[pixel_counter] = mcp_buffer.real_values[pixel_counter];
+                        //        if ( mcp_buffer.real_values[pixel_counter] > max_coc_projection.real_values[pixel_counter] )
+                        //            max_coc_projection.real_values[pixel_counter] = mcp_buffer.real_values[pixel_counter];
 
-                                pixel_counter++;
-                            }
+                        //       pixel_counter++;
+                        //   }
 
-                            pixel_counter += max_intensity_projection.padding_jump_value;
-                        }
+                        //    pixel_counter += max_intensity_projection.padding_jump_value;
+                        //  }
 
                         GPU[tIDX].histogram.CopyToHostAndAdd(histogram_data);
 
@@ -1084,6 +1082,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                                 best_psi.real_values[pixel_counter]                 = current_psi;
                                 best_theta.real_values[pixel_counter]               = global_euler_search.list_of_search_parameters[current_search_position][1];
                                 best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
+                                max_coc_projection.real_values[pixel_counter]       = SCTF_padded_image.real_values[pixel_counter];
                                 best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
                                 best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
                                 //                                if (size_i != 0) wxPrintf("size_i = %i\n", size_i);
@@ -1104,19 +1103,19 @@ bool MatchTemplateApp::DoCalculation( ) {
 
                         pixel_counter += padded_reference.padding_jump_value;
                     }
-                    pixel_counter = 0;
-                    for ( current_y = 0; current_y < max_coc_projection.logical_y_dimension; current_y++ ) {
-                        for ( current_x = 0; current_x < max_coc_projection.logical_x_dimension; current_x++ ) {
-                            // first mip
+                    // pixel_counter = 0;
+                    // for ( current_y = 0; current_y < max_coc_projection.logical_y_dimension; current_y++ ) {
+                    // for ( current_x = 0; current_x < max_coc_projection.logical_x_dimension; current_x++ ) {
+                    // first mip
 
-                            if ( SCTF_padded_image.real_values[pixel_counter] > max_coc_projection.real_values[pixel_counter] )
-                                max_coc_projection.real_values[pixel_counter] = SCTF_padded_image.real_values[pixel_counter];
+                    // if ( SCTF_padded_image.real_values[pixel_counter] > max_coc_projection.real_values[pixel_counter] )
+                    // max_coc_projection.real_values[pixel_counter] = SCTF_padded_image.real_values[pixel_counter];
 
-                            pixel_counter++;
-                        }
+                    // pixel_counter++;
+                    // }
 
-                        pixel_counter += SCTF_padded_image.padding_jump_value;
-                    }
+                    // pixel_counter += SCTF_padded_image.padding_jump_value;
+                    // }
 
                     //                    correlation_pixel_sum.AddImage(&padded_reference);
                     for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
@@ -1379,7 +1378,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         central_average = max_coc_projection.ReturnAverageOfRealValues(central_region, false);
         max_coc_projection.Resize(trim_x, trim_y, 1, central_average);
         max_coc_projection.Resize(original_input_image_x, original_input_image_y, 1, central_average);
-        max_coc_projection.QuickAndDirtyWriteSlice("/groups/kexin/coc_not_running_locally.mrc", 1);
+        // max_coc_projection.QuickAndDirtyWriteSlice("/groups/kexin/coc_not_running_locally.mrc", 1);
 
         //sum
         central_average = correlation_pixel_sum_image.ReturnAverageOfRealValues(central_region, false);
@@ -1995,10 +1994,11 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
             collated_phi_data[pixel_counter]        = result_phi_data[pixel_counter];
             collated_defocus_data[pixel_counter]    = result_defocus_data[pixel_counter];
             collated_pixel_size_data[pixel_counter] = result_pixel_size_data[pixel_counter];
+            collated_mcp_data[pixel_counter]        = result_mcp_data[pixel_counter];
         }
-        if ( result_mcp_data[pixel_counter] > collated_mcp_data[pixel_counter] ) {
-            collated_mcp_data[pixel_counter] = result_mcp_data[pixel_counter];
-        }
+        //if ( result_mcp_data[pixel_counter] > collated_mcp_data[pixel_counter] ) {
+        //    collated_mcp_data[pixel_counter] = result_mcp_data[pixel_counter];
+        // }
     }
 
     // sums and sum of squares
