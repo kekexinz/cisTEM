@@ -686,7 +686,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
-    // input_image.ApplyCurveFilter(&whitening_filter);
+    input_image.ApplyCurveFilter(&whitening_filter);
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
