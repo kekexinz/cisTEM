@@ -533,11 +533,13 @@ class Image {
     void  ComputeHistogramOfRealValuesCurve(Curve* histogram_curve);
     void  Compute1DAmplitudeSpectrumCurve(Curve* curve_with_average_power, Curve* curve_with_number_of_values);
     void  Compute1DPowerSpectrumCurve(Curve* curve_with_average_power, Curve* curve_with_number_of_values, bool average_amplitudes_not_intensities = false);
+    void  Compute1DPowerSpectrumCurve(Curve* curve_with_average_power, Curve* curve_with_number_of_values, Image* mask, bool average_amplitudes_not_intensities = false);
     void  Compute1DRotationalAverage(Curve& average, Curve& number_of_values, bool fractional_radius_in_real_space = false, bool average_real_parts = false);
     void  ComputeSpatialFrequencyAtEveryVoxel( );
     void  AverageRadially( );
     void  AverageRotationally( );
     void  ComputeLocalMeanAndVarianceMaps(Image* local_mean_map, Image* local_variance_map, Image* mask, long number_of_pixels_within_mask);
+    void  DetectIceBackground(Image* background_mask, float particle_radius_angstroms, float pixel_size, float tile_size_multiplier = 4.0f);
     void  SpectrumBoxConvolution(Image* output_image, int box_size, float minimum_radius);
     void  TaperEdges( );
     float ReturnAverageOfRealValues(float wanted_mask_radius = 0.0, bool invert_mask = false);

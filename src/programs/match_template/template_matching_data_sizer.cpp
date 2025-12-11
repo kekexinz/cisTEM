@@ -83,7 +83,7 @@ void TemplateMatchingDataSizer::SetImageAndTemplateSizing(const float wanted_hig
  * 
  * @param input_image 
  */
-void TemplateMatchingDataSizer::PreProcessInputImage(Image& input_image, bool swap_real_space_quadrants, bool normalize_to_variance_one) {
+void TemplateMatchingDataSizer::PreProcessInputImage(Image& input_image, bool swap_real_space_quadrants, bool normalize_to_variance_one, bool exclude_non_ice_for_noise, float particle_radius_angstroms, float tile_size_multiplier) {
 
     // We whiten the image prior to any padding etc in particular to remove any low-frequency gradients that would add to boundary dislocations.
     // We may also whiten following any further resampling and resizing or other ops that are done to the image. We need to keep track of the total filtering applied.
@@ -106,6 +106,27 @@ void TemplateMatchingDataSizer::PreProcessInputImage(Image& input_image, bool sw
     // We could also check and FFT if necessary similar to Resize() but we are assuming the input image is in real space.
     MyDebugAssertTrue(input_image.is_in_real_space, "Input image must be in real space");
 
+    // Optionally detect ice background for background-based whitening
+    Image* background_mask_ptr = nullptr;
+    Image background_mask;
+
+    if ( exclude_non_ice_for_noise && is_first_whitening ) {
+        // Estimate actual particle size from template dimensions (not the peak exclusion radius)
+        // Template box includes padding, so use ~60% of box size as particle diameter
+        // For typical particles: ribosome ~300A, proteasome ~150A, virus ~400A+
+        float template_box_size = template_size.x * pixel_size;
+        float estimated_particle_diameter = template_box_size * 0.6f; // 60% of box size
+        float estimated_particle_radius = estimated_particle_diameter * 0.5f;
+
+        parent_match_template_app_ptr->SendInfo(wxString::Format("Using background-based whitening (excluding particles/carbon from noise estimation)\n"));
+        parent_match_template_app_ptr->SendInfo(wxString::Format("  Template box: %.1f A, estimated particle size: %.1f A\n",
+                                                                  template_box_size, estimated_particle_diameter));
+
+        background_mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1, true);
+        input_image.DetectIceBackground(&background_mask, estimated_particle_radius, pixel_size, tile_size_multiplier);
+        background_mask_ptr = &background_mask;
+    }
+
 #ifdef DEBUG_IMG_PREPROCESS_OUTPUT
     if ( ReturnThreadNumberOfCurrentThread( ) == 0 ) {
         if ( swap_real_space_quadrants )
@@ -123,7 +144,14 @@ void TemplateMatchingDataSizer::PreProcessInputImage(Image& input_image, bool sw
     input_image.ZeroCentralPixel( );
 
     if ( is_first_whitening ) {
-        input_image.Compute1DPowerSpectrumCurve(&local_whitening_filter, &number_of_terms);
+        // Compute power spectrum from background regions only (if background whitening is enabled)
+        if ( background_mask_ptr != nullptr ) {
+            input_image.Compute1DPowerSpectrumCurve(&local_whitening_filter, &number_of_terms, background_mask_ptr);
+        }
+        else {
+            input_image.Compute1DPowerSpectrumCurve(&local_whitening_filter, &number_of_terms);
+        }
+
         local_whitening_filter.SquareRoot( );
         local_whitening_filter.Reciprocal( );
         local_whitening_filter.MultiplyByConstant(1.0f / local_whitening_filter.ReturnMaximumValue( ));

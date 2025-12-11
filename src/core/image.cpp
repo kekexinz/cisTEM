@@ -6696,6 +6696,114 @@ void Image::Compute1DPowerSpectrumCurve(Curve* curve_with_average_power, Curve* 
     }
 }
 
+/**
+ * @brief Compute 1D power spectrum curve using only masked regions (overloaded version)
+ *
+ * This version accepts a real-space mask to select which pixels contribute to the power spectrum.
+ * Useful for computing power spectrum from background regions only (excluding particles/carbon).
+ *
+ * @param curve_with_average_power Output curve for averaged power
+ * @param curve_with_number_of_values Output curve for number of values contributing to each bin
+ * @param mask Real-space binary mask (1.0 = include, 0.0 = exclude)
+ * @param average_amplitudes_not_intensities If true, average amplitudes; if false, average intensities
+ */
+void Image::Compute1DPowerSpectrumCurve(Curve* curve_with_average_power, Curve* curve_with_number_of_values, Image* mask, bool average_amplitudes_not_intensities) {
+    MyDebugAssertTrue(is_in_memory, "Memory not allocated");
+    MyDebugAssertFalse(is_in_real_space, "Image not in Fourier space");
+    MyDebugAssertTrue(mask->is_in_memory, "Mask memory not allocated");
+    MyDebugAssertTrue(mask->is_in_real_space, "Mask must be in real space");
+    MyDebugAssertTrue(HasSameDimensionsAs(mask), "Mask must have same dimensions as image");
+    MyDebugAssertTrue(curve_with_average_power->NumberOfPoints( ) > 0, "Curve not setup");
+    MyDebugAssertTrue(curve_with_average_power->data_x[0] == 0.0, "Curve does not start at x = 0\n");
+    MyDebugAssertTrue(curve_with_average_power->data_x[curve_with_average_power->NumberOfPoints( ) - 1] >= 0.49999, "Curve does not go to at least x = 0.5\n");
+    MyDebugAssertTrue(curve_with_average_power->NumberOfPoints( ) == curve_with_number_of_values->NumberOfPoints( ), "Curves need to have the same number of points");
+
+    // Transform mask to Fourier space to determine which Fourier components correspond to masked real-space regions
+    // We'll use the mask in a different way: for each Fourier voxel, we'll weight its contribution by the
+    // fraction of real-space pixels in the mask that contribute to that frequency component.
+    // For simplicity, we'll use a threshold approach: only include Fourier components if enough masked pixels contribute.
+
+    // Actually, a simpler and more correct approach:
+    // We want the power spectrum of the masked image, so we multiply the real-space image by the mask,
+    // then FFT, then compute power spectrum. But the image is already in Fourier space.
+    // We need to work backwards: we'll create a masked copy of the original image in real space.
+
+    // Since we don't have the original real-space image, we'll use a different strategy:
+    // We'll assume this is being called with the same image that was used to create the mask,
+    // and we need to back-transform, mask, and re-transform.
+
+    // Save current state
+    bool was_in_fourier_space = ! is_in_real_space;
+    Image masked_image;
+    masked_image.Allocate(logical_x_dimension, logical_y_dimension, logical_z_dimension, false);
+    masked_image.CopyFrom(this);
+
+    // Transform to real space if needed
+    if ( was_in_fourier_space ) {
+        masked_image.BackwardFFT( );
+    }
+
+    // Apply mask in real space
+    for ( long address = 0; address < masked_image.real_memory_allocated; address++ ) {
+        masked_image.real_values[address] *= mask->real_values[address];
+    }
+
+    // Transform back to Fourier space
+    masked_image.ForwardFFT( );
+
+    // Now compute power spectrum from the masked image
+    int   i, j, k;
+    float sq_dist_x, sq_dist_y, sq_dist_z;
+    int   counter;
+    long  address;
+    float spatial_frequency;
+    int   number_of_hermitian_mates = 0;
+
+    // Make sure the curves are clean
+    curve_with_average_power->ZeroYData( );
+    curve_with_number_of_values->ZeroYData( );
+
+    // Get amplitudes and sum them into the curve object
+    address = 0;
+    for ( k = 0; k <= physical_upper_bound_complex_z; k++ ) {
+        sq_dist_z = powf(ReturnFourierLogicalCoordGivenPhysicalCoord_Z(k) * fourier_voxel_size_z, 2);
+        for ( j = 0; j <= physical_upper_bound_complex_y; j++ ) {
+            sq_dist_y = powf(ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j) * fourier_voxel_size_y, 2);
+            for ( i = 0; i <= physical_upper_bound_complex_x; i++ ) {
+                if ( FourierComponentIsExplicitHermitianMate(i, j, k) ) {
+                    number_of_hermitian_mates++;
+                    address++;
+                    continue;
+                }
+                else {
+                    sq_dist_x         = powf(i * fourier_voxel_size_x, 2);
+                    spatial_frequency = sqrtf(sq_dist_x + sq_dist_y + sq_dist_z);
+
+                    if ( average_amplitudes_not_intensities ) {
+                        curve_with_average_power->AddValueAtXUsingLinearInterpolation(spatial_frequency, sqrtf(real(masked_image.complex_values[address]) * real(masked_image.complex_values[address]) + imag(masked_image.complex_values[address]) * imag(masked_image.complex_values[address])), true);
+                    }
+                    else {
+                        curve_with_average_power->AddValueAtXUsingLinearInterpolation(spatial_frequency, real(masked_image.complex_values[address]) * real(masked_image.complex_values[address]) + imag(masked_image.complex_values[address]) * imag(masked_image.complex_values[address]), true);
+                    }
+                    curve_with_number_of_values->AddValueAtXUsingLinearInterpolation(spatial_frequency, 1.0, true);
+
+                    address++;
+                }
+            }
+        }
+    }
+
+    // Do the actual averaging
+    for ( counter = 0; counter < curve_with_average_power->NumberOfPoints( ); counter++ ) {
+        if ( curve_with_number_of_values->data_y[counter] > 0.0 ) {
+            curve_with_average_power->data_y[counter] /= curve_with_number_of_values->data_y[counter];
+        }
+        else {
+            curve_with_average_power->data_y[counter] = 0.0;
+        }
+    }
+}
+
 //END_FOR_STAND_ALONE_CTFFIND
 
 /*
@@ -7211,6 +7319,278 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image* local_mean_map, Image* local_
     MyDebugAssertFalse(local_mean_map->HasNan( ), "Local mean map has NaN value(s)\n");
     MyDebugAssertFalse(local_variance_map->HasNan( ), "Local variance map has NaN value(s)\n");
     //MyDebugAssertFalse(local_variance_map->HasNegativeRealValue(),"Local variance map has negative value(s)\n");
+}
+
+/**
+ * @brief Detect ice background regions using tile-based Fano factor analysis
+ *
+ * Identifies particle-free vitreous ice regions for unbiased noise power spectrum estimation.
+ * Uses Fano factor (variance/mean) to distinguish pure shot noise (ice) from structured signal (particles).
+ *
+ * Algorithm:
+ * 1. Band-pass filter micrograph (20-500A) to remove thickness gradients and high-freq noise
+ * 2. Divide into tiles (tile_size_multiplier * particle_diameter)
+ * 3. Compute Fano factor per tile from band-passed variance and original mean
+ * 4. Select tiles with Fano factor near median (within 2*MAD) - indicates pure shot noise
+ * 5. Filter by mean intensity (5th-95th percentile) to exclude extreme ice thickness
+ * 6. Generate binary mask from selected tiles
+ *
+ * @param background_mask Output binary mask (1.0 = ice background, 0.0 = particles/other)
+ * @param particle_radius_angstroms Expected particle radius in Angstroms (used for tile sizing)
+ * @param pixel_size Pixel size in Angstroms
+ * @param tile_size_multiplier Tile size as multiple of particle diameter (default: 4.0, valid: 3-5x recommended)
+ */
+void Image::DetectIceBackground(Image* background_mask, float particle_radius_angstroms, float pixel_size, float tile_size_multiplier) {
+    MyDebugAssertTrue(is_in_memory, "Image memory not allocated");
+    MyDebugAssertTrue(background_mask->is_in_memory, "Background mask memory not allocated");
+    MyDebugAssertTrue(HasSameDimensionsAs(background_mask), "Background mask does not have same dimensions");
+    MyDebugAssertTrue(is_in_real_space, "Image must be in real space");
+    MyDebugAssertTrue(logical_z_dimension == 1, "Only 2D images supported for now");
+
+    // =========================================================================
+    // Improved ice detection using tile-based Fano factor analysis
+    //
+    // Algorithm:
+    // 1. Band-pass filter to remove slow thickness gradients
+    // 2. Compute tile-based mean and variance
+    // 3. Compute Fano factor (variance/mean) per tile
+    // 4. Select tiles with Fano factor near histogram peak (pure shot noise)
+    // 5. Filter by mean intensity to exclude very thick/thin ice
+    // 6. Generate mask from selected tiles
+    // =========================================================================
+
+    // DEBUG: Check input image statistics
+    float input_min, input_max;
+    GetMinMax(input_min, input_max);
+    float input_mean = ReturnAverageOfRealValues();
+    float input_variance = ReturnVarianceOfRealValues();
+    wxPrintf("DEBUG Input image stats: min=%.6f, max=%.6f, mean=%.6f, variance=%.6f\n",
+             input_min, input_max, input_mean, input_variance);
+
+    // Step 1: Create band-pass filtered copy to remove slow thickness gradients
+    Image bandpass_image;
+    bandpass_image.Allocate(logical_x_dimension, logical_y_dimension, 1, true);
+    bandpass_image.CopyFrom(this);
+
+    // Apply band-pass filter: remove very low frequencies (thickness gradients)
+    // and very high frequencies (noise)
+    // Low freq cutoff: ~500A (removes ice thickness variation)
+    // High freq cutoff: ~20A (removes high-freq noise, keeps particle features)
+    float low_freq_cutoff = pixel_size / 500.0f;   // in 1/pixel units (Nyquist = 0.5)
+    float high_freq_cutoff = pixel_size / 20.0f;   // in 1/pixel units
+
+    bandpass_image.ForwardFFT();
+
+    // Manual band-pass in Fourier space
+    long address = 0;
+    for (int j = 0; j <= bandpass_image.physical_upper_bound_complex_y; j++) {
+        float y_freq_sq = powf(bandpass_image.ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j) * bandpass_image.fourier_voxel_size_y, 2);
+        for (int i = 0; i <= bandpass_image.physical_upper_bound_complex_x; i++) {
+            float x_freq_sq = powf(i * bandpass_image.fourier_voxel_size_x, 2);
+            float freq = sqrtf(x_freq_sq + y_freq_sq);
+
+            float filter = 1.0f;
+
+            // High-pass (remove low frequencies / thickness gradients)
+            if (freq < low_freq_cutoff) {
+                filter *= freq / low_freq_cutoff;
+            }
+            // Low-pass (remove high frequency noise)
+            if (freq > high_freq_cutoff) {
+                filter *= expf(-powf((freq - high_freq_cutoff) / (high_freq_cutoff * 0.2f), 2));
+            }
+
+            bandpass_image.complex_values[address] *= filter;
+            address++;
+        }
+    }
+    bandpass_image.BackwardFFT();
+
+    // DEBUG: Save band-pass filtered image
+    bandpass_image.QuickAndDirtyWriteSlice("debug_bandpass_image.mrc", 1);
+    wxPrintf("DEBUG: Saved band-pass filtered image to debug_bandpass_image.mrc\n");
+
+    // Step 2: Tile-based analysis
+    // Use tile size as a multiple of particle diameter for robust statistics
+    // Larger tiles reduce edge effects from particles at tile boundaries
+    float particle_diameter_pixels = particle_radius_angstroms * 2.0f / pixel_size;
+    int tile_size = int(particle_diameter_pixels * tile_size_multiplier);
+    // Ensure tile size is reasonable (at least 64, at most 512)
+    tile_size = std::max(64, std::min(512, tile_size));
+    // Make tile size a multiple of 2 for efficiency
+    tile_size = (tile_size / 2) * 2;
+
+    int num_tiles_x = logical_x_dimension / tile_size;
+    int num_tiles_y = logical_y_dimension / tile_size;
+    int total_tiles = num_tiles_x * num_tiles_y;
+
+    wxPrintf("DEBUG: Tile size = %d pixels (%.1fx particle diameter of %.0f pixels), grid = %dx%d = %d tiles\n",
+             tile_size, tile_size_multiplier, particle_diameter_pixels, num_tiles_x, num_tiles_y, total_tiles);
+
+    // Compute mean, variance, and Fano factor for each tile
+    std::vector<float> tile_means(total_tiles);
+    std::vector<float> tile_variances(total_tiles);
+    std::vector<float> tile_fano(total_tiles);
+    std::vector<int> tile_x(total_tiles);
+    std::vector<int> tile_y(total_tiles);
+
+    int tile_idx = 0;
+    for (int ty = 0; ty < num_tiles_y; ty++) {
+        for (int tx = 0; tx < num_tiles_x; tx++) {
+            int start_x = tx * tile_size;
+            int start_y = ty * tile_size;
+
+            // Compute mean and variance for this tile (use ORIGINAL image for mean, bandpass for variance)
+            double sum = 0.0;
+            double sum_sq = 0.0;
+            double sum_bp = 0.0;
+            double sum_bp_sq = 0.0;
+            int count = 0;
+
+            for (int j = start_y; j < start_y + tile_size && j < logical_y_dimension; j++) {
+                for (int i = start_x; i < start_x + tile_size && i < logical_x_dimension; i++) {
+                    long address = j * (logical_x_dimension + padding_jump_value) + i;
+                    float val = real_values[address];
+                    float val_bp = bandpass_image.real_values[address];
+                    sum += val;
+                    sum_sq += val * val;
+                    sum_bp += val_bp;
+                    sum_bp_sq += val_bp * val_bp;
+                    count++;
+                }
+            }
+
+            float mean = float(sum / count);
+            float variance_bp = float(sum_bp_sq / count - (sum_bp / count) * (sum_bp / count));
+
+            // Fano factor: variance / mean
+            // For pure Poisson shot noise: Fano ≈ constant (the gain)
+            // For regions with structure: Fano > constant (excess variance)
+            // Use variance from bandpass image but mean from original (for Poisson baseline)
+            float fano = (mean > 0) ? (variance_bp / mean) : 0.0f;
+
+            tile_means[tile_idx] = mean;
+            tile_variances[tile_idx] = variance_bp;
+            tile_fano[tile_idx] = fano;
+            tile_x[tile_idx] = tx;
+            tile_y[tile_idx] = ty;
+            tile_idx++;
+        }
+    }
+
+    // Step 3: Find the peak of the Fano factor histogram (pure ice tiles)
+    // Sort Fano factors to find the mode region
+    std::vector<float> sorted_fano = tile_fano;
+    std::sort(sorted_fano.begin(), sorted_fano.end());
+
+    // The peak should be near the median for images with mostly ice
+    // Use robust statistics: median and MAD (median absolute deviation)
+    float median_fano = sorted_fano[total_tiles / 2];
+
+    std::vector<float> abs_deviations(total_tiles);
+    for (int i = 0; i < total_tiles; i++) {
+        abs_deviations[i] = fabsf(tile_fano[i] - median_fano);
+    }
+    std::sort(abs_deviations.begin(), abs_deviations.end());
+    float mad_fano = abs_deviations[total_tiles / 2] * 1.4826f;  // Scale factor for normal distribution
+
+    wxPrintf("DEBUG: Fano factor stats: median=%.4f, MAD=%.4f\n", median_fano, mad_fano);
+
+    // Step 4: Select tiles with Fano factor near the peak
+    // Tiles with Fano within 2 MAD of median are considered pure ice
+    float fano_threshold_low = median_fano - 2.0f * mad_fano;
+    float fano_threshold_high = median_fano + 2.0f * mad_fano;
+
+    // Step 5: Also filter by mean intensity (exclude very thick or thin ice)
+    std::vector<float> sorted_means = tile_means;
+    std::sort(sorted_means.begin(), sorted_means.end());
+    float mean_5th = sorted_means[int(0.05f * total_tiles)];
+    float mean_95th = sorted_means[int(0.95f * total_tiles)];
+
+    wxPrintf("DEBUG: Selection thresholds:\n");
+    wxPrintf("  Fano: %.4f - %.4f (median +/- 2*MAD)\n", fano_threshold_low, fano_threshold_high);
+    wxPrintf("  Mean: %.2f - %.2f (5th-95th percentile)\n", mean_5th, mean_95th);
+
+    // Step 6: Create the background mask from selected tiles
+    background_mask->SetToConstant(0.0f);
+
+    int tiles_accepted = 0;
+    int tiles_rejected_fano = 0;
+    int tiles_rejected_mean = 0;
+
+    // Create a tile mask first (for debugging)
+    Image tile_mask;
+    tile_mask.Allocate(num_tiles_x, num_tiles_y, 1, true);
+    tile_mask.SetToConstant(0.0f);
+
+    Image fano_map;
+    fano_map.Allocate(num_tiles_x, num_tiles_y, 1, true);
+
+    for (int i = 0; i < total_tiles; i++) {
+        int tx = tile_x[i];
+        int ty = tile_y[i];
+
+        // Store Fano factor in map for debugging
+        fano_map.real_values[ty * num_tiles_x + tx] = tile_fano[i];
+
+        bool fano_ok = (tile_fano[i] >= fano_threshold_low && tile_fano[i] <= fano_threshold_high);
+        bool mean_ok = (tile_means[i] >= mean_5th && tile_means[i] <= mean_95th);
+
+        if (fano_ok && mean_ok) {
+            // This tile is ice - fill corresponding region in mask
+            int start_x = tx * tile_size;
+            int start_y = ty * tile_size;
+
+            for (int j = start_y; j < start_y + tile_size && j < logical_y_dimension; j++) {
+                for (int ii = start_x; ii < start_x + tile_size && ii < logical_x_dimension; ii++) {
+                    long address = j * (logical_x_dimension + padding_jump_value) + ii;
+                    background_mask->real_values[address] = 1.0f;
+                }
+            }
+
+            tile_mask.real_values[ty * num_tiles_x + tx] = 1.0f;
+            tiles_accepted++;
+        }
+        else {
+            if (!fano_ok) tiles_rejected_fano++;
+            if (!mean_ok) tiles_rejected_mean++;
+        }
+    }
+
+    // DEBUG: Save diagnostic images
+    fano_map.QuickAndDirtyWriteSlice("debug_fano_map.mrc", 1);
+    tile_mask.QuickAndDirtyWriteSlice("debug_tile_mask.mrc", 1);
+    background_mask->QuickAndDirtyWriteSlice("debug_background_mask.mrc", 1);
+    wxPrintf("DEBUG: Saved fano_map, tile_mask, and background_mask\n");
+
+    // Compute final statistics
+    long ice_pixel_count = 0;
+    long total_pixels = 0;
+    for (int j = 0; j < logical_y_dimension; j++) {
+        for (int i = 0; i < logical_x_dimension; i++) {
+            long address = j * (logical_x_dimension + padding_jump_value) + i;
+            if (background_mask->real_values[address] > 0.5f) {
+                ice_pixel_count++;
+            }
+            total_pixels++;
+        }
+    }
+
+    float ice_fraction = float(ice_pixel_count) / float(total_pixels);
+    float tile_fraction = float(tiles_accepted) / float(total_tiles);
+
+    wxPrintf("DEBUG: Tile rejection stats: fano=%d, mean=%d, accepted=%d (%.1f%%)\n",
+             tiles_rejected_fano, tiles_rejected_mean, tiles_accepted, tile_fraction * 100.0f);
+
+    // Sanity check
+    if (ice_fraction < 0.1f) {
+        wxPrintf("Warning: Only %.1f%% of image detected as ice background. Image may be very crowded or parameters need adjustment.\n", ice_fraction * 100.0f);
+    }
+    else {
+        wxPrintf("Detected %.1f%% of image as ice background (particle-free regions)\n", ice_fraction * 100.0f);
+    }
+
+    background_mask->object_is_centred_in_box = true;
 }
 
 //BEGIN_FOR_STAND_ALONE_CTFFIND

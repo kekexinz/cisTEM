@@ -99,9 +99,9 @@ class TemplateMatchingDataSizer {
     // TemplateMatchingDataSizer& operator=(TemplateMatchingDataSizer&&)      = delete;
 
     void SetImageAndTemplateSizing(const float wanted_high_resolution_limit, const bool use_fast_fft);
-    void PreProcessInputImage(Image& input_image, bool swap_real_space_quadrants, bool normalize_to_variance_one);
+    void PreProcessInputImage(Image& input_image, bool swap_real_space_quadrants, bool normalize_to_variance_one, bool exclude_non_ice_for_noise = false, float particle_radius_angstroms = 0.0f, float tile_size_multiplier = 4.0f);
 
-    void PreProcessResizedInputImage(Image& input_image) { PreProcessInputImage(input_image, true, false); }
+    void PreProcessResizedInputImage(Image& input_image) { PreProcessInputImage(input_image, true, false, false, 0.0f, 4.0f); }
 
     void ResizeTemplate_preSearch(Image& template_image, const bool use_lerp_not_fourier_resampling = false, const bool allow_upsampling = false);
     void ResizeTemplate_postSearch(Image& template_image);

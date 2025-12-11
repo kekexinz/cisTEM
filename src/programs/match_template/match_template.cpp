@@ -208,6 +208,7 @@ void MatchTemplateApp::ProgramSpecificInit( ) {
 void MatchTemplateApp::AddCommandLineOptions( ) {
     command_line_parser.AddLongSwitch("disable-gpu-prj", "Disable projection using the gpu. Default false");
     command_line_parser.AddLongSwitch("disable-flat-fielding", "Disable flat fielding. Default false");
+    command_line_parser.AddLongSwitch("use-background-whitening", "Enable background-based whitening (noise estimation from ice-only regions)");
     command_line_parser.AddOption("", "n-expected-false-positives", "average number of false positives per image, (defaults to 1)", wxCMD_LINE_VAL_DOUBLE);
     command_line_parser.AddLongSwitch("ignore-defocus-for-threshold", "assume the defocus planes are not independent locs for threshold calc, (defaults false)");
     command_line_parser.AddLongSwitch("apply-result-rescaling", "Rescale the results their original size, (defaults false)");
@@ -263,6 +264,8 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     bool     use_gpu_input             = false;
     int      max_threads               = 1; // Only used for the GPU code
     bool     use_fast_fft              = false;
+    bool     exclude_non_ice_for_noise = true;
+    float    tile_size_multiplier      = 4.0f;
 
     UserInput* my_input = new UserInput("MatchTemplate", 1.00);
 
@@ -298,6 +301,8 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     padding                 = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "1.0", 1.0, 2.0);
     //    ctf_refinement = my_input->GetYesNoFromUser("Refine defocus", "Should the particle defocus be refined?", "No");
     particle_radius_angstroms = my_input->GetFloatFromUser("Mask radius for global search (A) (0.0 = max)", "Radius of a circular mask to be applied to the input images during global search", "0.0", 0.0);
+    exclude_non_ice_for_noise = my_input->GetYesNoFromUser("Exclude non-ice for noise estimation", "Detect and exclude particles/carbon/contamination when estimating noise power spectrum", "Yes");
+    tile_size_multiplier      = my_input->GetFloatFromUser("Ice detection tile size multiplier", "Tile size as multiple of particle diameter for detecting clean ice regions (3-5x recommended)", "4.0", 1.0, 10.0);
     my_symmetry               = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "Yes");
@@ -318,7 +323,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbbi",
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbbibf",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       input_pixel_size,
@@ -361,7 +366,9 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       min_peak_radius,
                                       use_gpu_input,
                                       use_fast_fft,
-                                      max_threads);
+                                      max_threads,
+                                      exclude_non_ice_for_noise,
+                                      tile_size_multiplier);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -530,7 +537,9 @@ bool MatchTemplateApp::DoCalculation( ) {
     bool     use_gpu                         = my_current_job.arguments[40].ReturnBoolArgument( );
     bool     use_fast_fft                    = my_current_job.arguments[41].ReturnBoolArgument( );
 
-    int max_threads = my_current_job.arguments[42].ReturnIntegerArgument( );
+    int   max_threads               = my_current_job.arguments[42].ReturnIntegerArgument( );
+    bool  exclude_non_ice_for_noise = my_current_job.arguments[43].ReturnBoolArgument( );
+    float tile_size_multiplier      = my_current_job.arguments[44].ReturnFloatArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -656,7 +665,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         SendError("Local normalization is not yet supported with resampling.");
     }
 
-    data_sizer.PreProcessInputImage(input_image, false, true);
+    data_sizer.PreProcessInputImage(input_image, false, true, exclude_non_ice_for_noise, particle_radius_angstroms, tile_size_multiplier);
     profile_timing.lap("PreProcessInputImage");
 
     // Resize template and image for the search resolution
