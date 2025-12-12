@@ -677,10 +677,15 @@ bool MatchTemplateApp::DoCalculation( ) {
     input_image.ReplaceOutliersWithMean(5.0f);
 
     // Detect clean ice regions for unbiased noise estimation
+    // Use the template (reconstruction) size for tile sizing
+    int template_size_pixels = input_reconstruction_file.ReturnXSize( );
+
     Image ice_mask;
     if ( exclude_non_ice_for_noise ) {
         ice_mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
-        input_image.DetectIceBackground(&ice_mask, particle_radius_angstroms, pixel_size, tile_size_multiplier);
+        input_image.DetectIceBackground(&ice_mask, template_size_pixels, pixel_size, tile_size_multiplier);
+        // Save ice mask for visualization
+        ice_mask.QuickAndDirtyWriteSlice("ice_mask.mrc", 1);
     }
 
     input_image.ForwardFFT( );

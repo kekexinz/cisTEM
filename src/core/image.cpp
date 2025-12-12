@@ -7229,11 +7229,11 @@ void Image::ComputeLocalMeanAndVarianceMaps(Image* local_mean_map, Image* local_
  * 6. Generate binary mask from selected tiles
  *
  * @param background_mask Output binary mask (1.0 = ice background, 0.0 = particles/other)
- * @param particle_radius_angstroms Expected particle radius in Angstroms (used for tile sizing)
+ * @param template_size_pixels Size of the template in pixels (used for tile sizing)
  * @param pixel_size Pixel size in Angstroms
- * @param tile_size_multiplier Tile size as multiple of particle diameter (default: 4.0, valid: 3-5x recommended)
+ * @param tile_size_multiplier Tile size as multiple of template size (default: 4.0, valid: 2-5x recommended)
  */
-void Image::DetectIceBackground(Image* background_mask, float particle_radius_angstroms, float pixel_size, float tile_size_multiplier) {
+void Image::DetectIceBackground(Image* background_mask, int template_size_pixels, float pixel_size, float tile_size_multiplier) {
     MyDebugAssertTrue(is_in_memory, "Image memory not allocated");
     MyDebugAssertTrue(background_mask->is_in_memory, "Background mask memory not allocated");
     MyDebugAssertTrue(HasSameDimensionsAs(background_mask), "Background mask does not have same dimensions");
@@ -7252,6 +7252,11 @@ void Image::DetectIceBackground(Image* background_mask, float particle_radius_an
     Image bandpass_image;
     bandpass_image.Allocate(logical_x_dimension, logical_y_dimension, 1, true);
     bandpass_image.CopyFrom(this);
+
+    // Remove global DC offset before band-pass for stable statistics
+    float global_mean = bandpass_image.ReturnAverageOfRealValues( );
+    bandpass_image.AddConstant(-global_mean);
+    wxPrintf("DEBUG: Subtracted global mean %.6f before band-pass\n", global_mean);
 
     // Apply band-pass filter: remove very low frequencies (thickness gradients)
     // and very high frequencies (noise)
@@ -7288,9 +7293,8 @@ void Image::DetectIceBackground(Image* background_mask, float particle_radius_an
     bandpass_image.BackwardFFT( );
 
     // Step 2: Tile-based analysis
-    // Use tile size as a multiple of particle diameter for robust statistics
-    float particle_diameter_pixels = particle_radius_angstroms * 2.0f / pixel_size;
-    int   tile_size                = int(particle_diameter_pixels * tile_size_multiplier);
+    // Use tile size as a multiple of template size for robust statistics
+    int tile_size = int(template_size_pixels * tile_size_multiplier);
     // Ensure tile size is reasonable (at least 64, at most 512)
     tile_size = std::max(64, std::min(512, tile_size));
     // Make tile size a multiple of 2 for efficiency
@@ -7300,8 +7304,8 @@ void Image::DetectIceBackground(Image* background_mask, float particle_radius_an
     int num_tiles_y = logical_y_dimension / tile_size;
     int total_tiles = num_tiles_x * num_tiles_y;
 
-    wxPrintf("DEBUG: Tile size = %d pixels (%.1fx particle diameter of %.0f pixels), grid = %dx%d = %d tiles\n",
-             tile_size, tile_size_multiplier, particle_diameter_pixels, num_tiles_x, num_tiles_y, total_tiles);
+    wxPrintf("Ice detection: template=%d px, tile=%d px (%.1fx), grid=%dx%d=%d tiles\n",
+             template_size_pixels, tile_size, tile_size_multiplier, num_tiles_x, num_tiles_y, total_tiles);
 
     // Compute mean, variance, and Fano factor for each tile
     std::vector<float> tile_means(total_tiles);

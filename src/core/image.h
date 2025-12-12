@@ -437,7 +437,7 @@ class Image {
     void                 ComputeSpatialFrequencyAtEveryVoxel( );
     void                 AverageRadially( );
     void                 ComputeLocalMeanAndVarianceMaps(Image* local_mean_map, Image* local_variance_map, Image* mask, long number_of_pixels_within_mask);
-    void                 DetectIceBackground(Image* background_mask, float particle_radius_angstroms, float pixel_size, float tile_size_multiplier = 4.0f);
+    void                 DetectIceBackground(Image* background_mask, int template_size_pixels, float pixel_size, float tile_size_multiplier = 4.0f);
     void                 SpectrumBoxConvolution(Image* output_image, int box_size, float minimum_radius);
     void                 TaperEdges( );
     float                ReturnAverageOfRealValues(float wanted_mask_radius = 0.0, bool invert_mask = false);
