@@ -676,6 +676,17 @@ bool MatchTemplateApp::DoCalculation( ) {
     // This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
     input_image.ReplaceOutliersWithMean(5.0f);
 
+    // Compute the default (full image) PSD BEFORE any ice-related processing
+    // This serves as the baseline for comparison
+    Curve default_psd;
+    Curve default_number_of_terms;
+    default_psd.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    default_number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    input_image.ForwardFFT( );
+    input_image.Compute1DPowerSpectrumCurve(&default_psd, &default_number_of_terms);
+    default_psd.WriteToFile("psd_default.txt");
+    input_image.BackwardFFT( ); // Return to real space for ice detection
+
     // Detect clean ice regions for unbiased noise estimation
     // Use the template (reconstruction) size for tile sizing
     int template_size_pixels = input_reconstruction_file.ReturnXSize( );
@@ -688,28 +699,143 @@ bool MatchTemplateApp::DoCalculation( ) {
         ice_mask.QuickAndDirtyWriteSlice("ice_mask.mrc", 1);
     }
 
+    // Compute PSD from tiles before FFT'ing the full image
+    if ( exclude_non_ice_for_noise ) {
+        // Tile-based PSD estimation from clean ice regions
+        // Use tiles from the ORIGINAL unfiltered image, selected by ice mask
+        int tile_size = int(template_size_pixels * tile_size_multiplier);
+        tile_size     = std::max(64, std::min(512, tile_size));
+        tile_size     = (tile_size / 2) * 2; // Make even
+
+        int num_tiles_x = input_image.logical_x_dimension / tile_size;
+        int num_tiles_y = input_image.logical_y_dimension / tile_size;
+
+        // Accumulator for 2D power spectrum (use tile_size x tile_size)
+        Image accumulated_psd;
+        accumulated_psd.Allocate(tile_size, tile_size, 1, false); // Fourier space
+        accumulated_psd.SetToConstant(0.0f);
+
+        Image tile;
+        tile.Allocate(tile_size, tile_size, 1, true);
+
+        int tiles_used = 0;
+
+        for ( int ty = 0; ty < num_tiles_y; ty++ ) {
+            for ( int tx = 0; tx < num_tiles_x; tx++ ) {
+                int start_x = tx * tile_size;
+                int start_y = ty * tile_size;
+
+                // Check if this tile is mostly in ice region (>50% ice pixels)
+                int   ice_pixels  = 0;
+                int   total_count = 0;
+                for ( int jj = 0; jj < tile_size; jj++ ) {
+                    for ( int ii = 0; ii < tile_size; ii++ ) {
+                        long mask_addr = (start_y + jj) * (ice_mask.logical_x_dimension + ice_mask.padding_jump_value) + (start_x + ii);
+                        if ( ice_mask.real_values[mask_addr] > 0.5f )
+                            ice_pixels++;
+                        total_count++;
+                    }
+                }
+                if ( float(ice_pixels) / float(total_count) < 0.5f )
+                    continue;
+
+                // Extract tile from original image
+                double tile_sum = 0.0;
+                for ( int jj = 0; jj < tile_size; jj++ ) {
+                    for ( int ii = 0; ii < tile_size; ii++ ) {
+                        long src_addr  = (start_y + jj) * (input_image.logical_x_dimension + input_image.padding_jump_value) + (start_x + ii);
+                        long tile_addr = jj * (tile.logical_x_dimension + tile.padding_jump_value) + ii;
+                        tile.real_values[tile_addr] = input_image.real_values[src_addr];
+                        tile_sum += tile.real_values[tile_addr];
+                    }
+                }
+
+                // Subtract tile mean (DC removal per tile)
+                float tile_mean = float(tile_sum / (tile_size * tile_size));
+                tile.AddConstant(-tile_mean);
+
+                // Apodize with cosine mask (Tukey-like window)
+                // CosineMask applies a smooth falloff from center
+                float mask_radius = tile_size * 0.4f; // Start falloff at 80% of half-width
+                float mask_edge   = tile_size * 0.1f; // 10% edge width
+                tile.CosineMask(mask_radius, mask_edge, false, false, 0.0f);
+
+                // FFT the tile
+                tile.ForwardFFT( );
+
+                // Accumulate power spectrum (|F|^2)
+                for ( long addr = 0; addr < accumulated_psd.real_memory_allocated / 2; addr++ ) {
+                    float real_part = real(tile.complex_values[addr]);
+                    float imag_part = imag(tile.complex_values[addr]);
+                    float power     = real_part * real_part + imag_part * imag_part;
+                    // accumulated_psd is in Fourier space, store as real values
+                    accumulated_psd.complex_values[addr] += std::complex<float>(power, 0.0f);
+                }
+
+                // Return tile to real space for next iteration
+                tile.is_in_real_space = true;
+
+                tiles_used++;
+            }
+        }
+
+        wxPrintf("Tile-based PSD: used %d tiles of size %d\n", tiles_used, tile_size);
+
+        if ( tiles_used > 0 ) {
+            // Average the accumulated power spectrum
+            accumulated_psd.DivideByConstant(float(tiles_used));
+
+            // Radially average to get 1D PSD
+            // Setup curves for the tile size
+            Curve tile_psd;
+            Curve tile_counts;
+            tile_psd.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((tile_size / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+            tile_counts.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((tile_size / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+
+            // Radially average the 2D PSD
+            for ( int j = 0; j <= accumulated_psd.physical_upper_bound_complex_y; j++ ) {
+                float y_freq_sq = powf(accumulated_psd.ReturnFourierLogicalCoordGivenPhysicalCoord_Y(j) * accumulated_psd.fourier_voxel_size_y, 2);
+                for ( int i = 0; i <= accumulated_psd.physical_upper_bound_complex_x; i++ ) {
+                    float x_freq_sq         = powf(i * accumulated_psd.fourier_voxel_size_x, 2);
+                    float spatial_frequency = sqrtf(x_freq_sq + y_freq_sq);
+                    long  addr              = j * (accumulated_psd.physical_upper_bound_complex_x + 1) + i;
+                    float power             = real(accumulated_psd.complex_values[addr]);
+                    tile_psd.AddValueAtXUsingLinearInterpolation(spatial_frequency, power, true);
+                    tile_counts.AddValueAtXUsingLinearInterpolation(spatial_frequency, 1.0f, true);
+                }
+            }
+
+            // Normalize
+            for ( int i = 0; i < tile_psd.number_of_points; i++ ) {
+                if ( tile_counts.data_y[i] > 0.0f ) {
+                    tile_psd.data_y[i] /= tile_counts.data_y[i];
+                }
+            }
+
+            tile_psd.WriteToFile("psd_ice_only.txt");
+
+            // Copy to whitening_filter (need to resample if sizes differ)
+            // For now, use direct copy since we'll build filter from this
+            whitening_filter.CopyFrom(&tile_psd);
+        }
+        else {
+            wxPrintf("Warning: No ice tiles found, falling back to full-image PSD\n");
+            input_image.ForwardFFT( );
+            input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+            input_image.BackwardFFT( );
+        }
+    }
+
     input_image.ForwardFFT( );
     input_image.SwapRealSpaceQuadrants( );
 
     input_image.ZeroCentralPixel( );
 
-    // Always compute the default (full image) PSD first
-    Curve default_psd;
-    Curve default_number_of_terms;
-    default_psd.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    default_number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    input_image.Compute1DPowerSpectrumCurve(&default_psd, &default_number_of_terms);
-    default_psd.WriteToFile("psd_default.txt");
-
-    if ( exclude_non_ice_for_noise ) {
-        // Use masked PSD computation for cleaner noise estimate
-        // Mask must remain in real space - it defines which pixels to include
-        input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms, &ice_mask);
-        whitening_filter.WriteToFile("psd_ice_only.txt");
-    }
-    else {
+    if ( ! exclude_non_ice_for_noise ) {
+        // Use full-image PSD if ice exclusion is disabled
         input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
     }
+
     whitening_filter.SquareRoot( );
     whitening_filter.Reciprocal( );
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
