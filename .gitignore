@@ -26,3 +26,17 @@ RemoteSystemsTempFiles
 devcontainer.json
 cistem_config.in*
 scripts/testing/post_format_test.cpp
+
+# Untracked local files
+.Project3D.dff
+.Simulator.dff
+.claude/
+.vscode_shared/CistemDev/CistemDev
+2DTM_postprocess_tool/
+6sct_one_leg.pdb
+clathrin_p200k_n200k_4.0Apix_500-2500nm.star
+include/Eigen/
+simulate_clathrin_t300A.sh
+test.mrc
+tmp/
+true.mrc

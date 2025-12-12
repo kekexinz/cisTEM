@@ -170,6 +170,8 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     float    in_plane_angular_step     = 0;
     bool     use_gpu_input             = false;
     int      max_threads               = 1; // Only used for the GPU code
+    bool     exclude_non_ice_for_noise = true;
+    float    tile_size_multiplier      = 4.0f;
 
     UserInput* my_input = new UserInput("MatchTemplate", 1.00);
 
@@ -205,6 +207,8 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     padding                 = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "1.0", 1.0, 2.0);
     //    ctf_refinement = my_input->GetYesNoFromUser("Refine defocus", "Should the particle defocus be refined?", "No");
     particle_radius_angstroms = my_input->GetFloatFromUser("Mask radius for global search (A) (0.0 = max)", "Radius of a circular mask to be applied to the input images during global search", "0.0", 0.0);
+    exclude_non_ice_for_noise = my_input->GetYesNoFromUser("Exclude non-ice for noise estimation", "Detect and exclude particles/carbon/contamination when estimating noise power spectrum", "Yes");
+    tile_size_multiplier      = my_input->GetFloatFromUser("Ice detection tile size multiplier", "Tile size as multiple of particle diameter for detecting clean ice regions (3-5x recommended)", "4.0", 1.0, 10.0);
     my_symmetry               = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
@@ -222,7 +226,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbibf", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -263,7 +267,9 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       result_filename.ToUTF8( ).data( ),
                                       min_peak_radius,
                                       use_gpu_input,
-                                      max_threads);
+                                      max_threads,
+                                      exclude_non_ice_for_noise,
+                                      tile_size_multiplier);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -373,6 +379,8 @@ bool MatchTemplateApp::DoCalculation( ) {
     float    min_peak_radius                 = my_current_job.arguments[39].ReturnFloatArgument( );
     bool     use_gpu                         = my_current_job.arguments[40].ReturnBoolArgument( );
     int      max_threads                     = my_current_job.arguments[41].ReturnIntegerArgument( );
+    bool     exclude_non_ice_for_noise       = my_current_job.arguments[42].ReturnBoolArgument( );
+    float    tile_size_multiplier            = my_current_job.arguments[43].ReturnFloatArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -667,16 +675,41 @@ bool MatchTemplateApp::DoCalculation( ) {
     // remove outliers
     // This won't work for movie frames (13.0 is used in unblur) TODO use poisson stats
     input_image.ReplaceOutliersWithMean(5.0f);
+
+    // Detect clean ice regions for unbiased noise estimation
+    Image ice_mask;
+    if ( exclude_non_ice_for_noise ) {
+        ice_mask.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, true);
+        input_image.DetectIceBackground(&ice_mask, particle_radius_angstroms, pixel_size, tile_size_multiplier);
+    }
+
     input_image.ForwardFFT( );
     input_image.SwapRealSpaceQuadrants( );
 
     input_image.ZeroCentralPixel( );
-    input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+
+    // Always compute the default (full image) PSD first
+    Curve default_psd;
+    Curve default_number_of_terms;
+    default_psd.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    default_number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    input_image.Compute1DPowerSpectrumCurve(&default_psd, &default_number_of_terms);
+    default_psd.WriteToFile("psd_default.txt");
+
+    if ( exclude_non_ice_for_noise ) {
+        // Use masked PSD computation for cleaner noise estimate
+        // Mask must remain in real space - it defines which pixels to include
+        input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms, &ice_mask);
+        whitening_filter.WriteToFile("psd_ice_only.txt");
+    }
+    else {
+        input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+    }
     whitening_filter.SquareRoot( );
     whitening_filter.Reciprocal( );
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
-    //whitening_filter.WriteToFile("/tmp/filter.txt");
+    whitening_filter.WriteToFile("filter.txt");
     input_image.ApplyCurveFilter(&whitening_filter);
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
